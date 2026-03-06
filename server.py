@@ -261,6 +261,9 @@ class AudioRouter:
         self._delay_buffers = {}        # device_id -> deque of audio chunk bytes
         self._effects = {}              # device_id -> {type, rate_hz, depth, phase}
         self._latency = {}              # device_id -> latest write latency in ms
+        self._source_muted = False      # True if we muted the loopback source
+        self._source_endpoint = None    # IAudioEndpointVolume of source device
+        self._source_prev_mute = False  # original mute state to restore
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -329,6 +332,9 @@ class AudioRouter:
         )
         self._capture_thread.start()
 
+        # Mute the loopback source so audio only comes from BT speakers
+        self._mute_source()
+
         matched_names = [f"  - {d['name']}" for d in bt_devices if d['id'] in self._device_index_map]
         print(f"[AudioRouter] Started: capturing '{self._loopback_info['name']}' "
               f"({self._sample_rate}Hz {self._channels}ch)")
@@ -369,6 +375,7 @@ class AudioRouter:
         self._output_threads.clear()
         self._audio_queues.clear()
         self._device_index_map.clear()
+        self._unmute_source()
         self._cleanup_pa()
         print("[AudioRouter] Stopped")
 
@@ -376,6 +383,38 @@ class AudioRouter:
         """Update the volume multiplier for a device's output stream."""
         with self._lock:
             self._volumes[device_id] = max(0.0, min(1.0, float(volume)))
+
+    def _mute_source(self):
+        """Mute the loopback source device so audio only plays from BT speakers."""
+        try:
+            _init_com()
+            from ctypes import cast, POINTER
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import IAudioEndpointVolume
+            speakers = AudioUtilities.GetSpeakers()
+            interface = speakers.Activate(
+                IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            ev = cast(interface, POINTER(IAudioEndpointVolume))
+            self._source_prev_mute = bool(ev.GetMute())
+            ev.SetMute(True, None)
+            self._source_endpoint = ev
+            self._source_muted = True
+            print("[AudioRouter] Muted source device")
+        except Exception as exc:
+            print(f"[AudioRouter] Could not mute source: {exc}")
+
+    def _unmute_source(self):
+        """Restore the loopback source device's mute state."""
+        if not self._source_muted:
+            return
+        try:
+            if self._source_endpoint:
+                self._source_endpoint.SetMute(self._source_prev_mute, None)
+                print("[AudioRouter] Restored source device mute state")
+        except Exception as exc:
+            print(f"[AudioRouter] Could not unmute source: {exc}")
+        self._source_muted = False
+        self._source_endpoint = None
 
     def update_devices(self, bt_devices):
         """Re-sync with current BT device list. Restart if devices changed."""
