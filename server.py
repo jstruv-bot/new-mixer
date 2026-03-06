@@ -1121,6 +1121,7 @@ _cue_device_id = None            # device used as cue/headphone output
 _cue_members = set()             # device_ids in cue (preview) mode
 _min_volumes = {}                # device_id -> float (0.0-1.0) minimum volume floor
 _max_volumes = {}                # device_id -> float (0.0-1.0) max volume cap
+_viz_mode = 0  # 0=energy only, 1=spectrum, 2=spectrum+beat
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -1825,6 +1826,13 @@ def ws_set_cue_device(data):
                                   "cue_device": _cue_device_id})
 
 
+@socketio.on("set_visualizer_mode")
+def ws_set_visualizer_mode(data):
+    """Set visualizer analysis tier (0=energy, 1=spectrum, 2=spectrum+beat)."""
+    global _viz_mode
+    mode = data.get("mode", 0)
+    _viz_mode = max(0, min(2, int(mode)))
+
 
 def _get_zone_snapshot():
     """Return zone positions under lock."""
@@ -1913,7 +1921,7 @@ def _spotify_poller():
 
 
 def _energy_emitter():
-    """Background thread: emits audio energy at ~10Hz for Auto-DJ."""
+    """Background thread: emits audio energy and spectrum data."""
     while not _shutdown_event.is_set():
         _shutdown_event.wait(timeout=0.1)  # ~10Hz
         if _shutdown_event.is_set():
@@ -1922,6 +1930,15 @@ def _energy_emitter():
             socketio.emit('audio_energy', {
                 'energy': round(audio_router.energy_level, 3)
             })
+            if _viz_mode >= 1:
+                payload = {
+                    'bands': [round(b, 3) for b in audio_router.spectrum_bands]
+                }
+                if _viz_mode >= 2:
+                    payload['beat'] = audio_router.beat_detected
+                    payload['bpm'] = round(audio_router.beat_bpm, 1)
+                    payload['phase'] = round(audio_router.beat_phase, 3)
+                socketio.emit('audio_spectrum', payload)
 
 
 # ---------------------------------------------------------------------------

@@ -803,3 +803,22 @@ class TestBeatDetection:
         router._beat_cooldown = 5  # Still in cooldown
         is_beat = router._check_beat(0.5)
         assert is_beat is False
+
+
+class TestVisualizerMode:
+    """Visualizer mode switching tests."""
+
+    def test_default_viz_mode_is_zero(self):
+        assert server_module._viz_mode == 0
+
+    def test_set_viz_mode_stores(self, socketio_client):
+        socketio_client.emit('set_visualizer_mode', {'mode': 2})
+        time.sleep(0.05)
+        assert server_module._viz_mode == 2
+        server_module._viz_mode = 0  # reset
+
+    def test_set_viz_mode_clamps(self, socketio_client):
+        socketio_client.emit('set_visualizer_mode', {'mode': 5})
+        time.sleep(0.05)
+        assert server_module._viz_mode == 2  # max is 2
+        server_module._viz_mode = 0
