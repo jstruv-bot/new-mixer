@@ -541,6 +541,14 @@
         vizBeatFlashAlpha: 0,
         vizParticles:   [],
         vizWaveformAngle: 0,
+        vizModeNameAlpha: 0,
+        vizModeNameText: '',
+        vizSpotifyOverlayAlpha: 0,
+        vizFsParticles: [],         // separate particle pool for fullscreen
+        vizTerrainLines: [],        // history buffer for waveform terrain
+        vizWaterfallHistory: [],    // history buffer for frequency waterfall
+        vizKaleidoAngle: 0,         // rotation for kaleidoscope
+        vizKaleidoShatter: 0,       // shatter animation state
     };
 
     const VIZ_THEMES = [
@@ -1224,6 +1232,190 @@
 
         ctx.globalAlpha = 1.0;
         ctx.restore();
+    }
+
+    // ── Fullscreen visualizer ────────────────────────────────────────
+    let _fsRotation = 0;  // persistent rotation for fullscreen modes
+    let _fsBeatScale = 1.0;  // beat-triggered scale pulse
+
+    function enterVizFullscreen() {
+        state.vizFullscreen = true;
+        canvas.style.position = 'fixed';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        canvas.style.width = '100vw';
+        canvas.style.height = '100vh';
+        canvas.style.zIndex = '9999';
+        canvas.style.borderRadius = '0';
+        canvas.style.border = 'none';
+        canvas.style.cursor = 'pointer';
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        document.querySelector('.canvas-wrap').style.overflow = 'visible';
+        markDirty();
+    }
+
+    function exitVizFullscreen() {
+        state.vizFullscreen = false;
+        canvas.style.position = '';
+        canvas.style.top = '';
+        canvas.style.left = '';
+        canvas.style.width = CANVAS_SIZE + 'px';
+        canvas.style.height = CANVAS_SIZE + 'px';
+        canvas.style.zIndex = '';
+        canvas.style.borderRadius = '12px';
+        canvas.style.border = '1px solid rgba(0, 212, 255, 0.15)';
+        canvas.style.cursor = '';
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = CANVAS_SIZE * dpr;
+        canvas.height = CANVAS_SIZE * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        _updateCanvasRect();
+        markDirty();
+    }
+
+    function drawVisualizerFrame() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const cx = w / 2;
+        const cy = h / 2;
+        const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
+
+        // Semi-transparent clear for trails
+        ctx.fillStyle = theme.background;
+        ctx.globalAlpha = 0.15;
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalAlpha = 1.0;
+
+        switch (state.vizFsMode) {
+            case 0: drawFsRadialSpectrum(w, h, cx, cy, theme); break;
+            case 1: drawFsParticleNebula(w, h, cx, cy, theme); break;
+            case 2: drawFsWaveformTerrain(w, h, cx, cy, theme); break;
+            case 3: drawFsKaleidoscope(w, h, cx, cy, theme); break;
+            case 4: drawFsWaterfall(w, h, cx, cy, theme); break;
+            default: drawFsRadialSpectrum(w, h, cx, cy, theme); break;
+        }
+
+        // Overlays
+        drawFsOverlays(w, h);
+
+        // Always request redraw in fullscreen (continuous animation)
+        markDirty();
+    }
+
+    function drawFsRadialSpectrum(w, h, cx, cy, theme) {
+        const spectrum = state.vizSpectrum;
+        const minDim = Math.min(w, h);
+
+        // Slow rotation
+        _fsRotation += 0.001;
+
+        // Beat pulse
+        if (state.vizBeat) _fsBeatScale = 1.3;
+        _fsBeatScale += (1.0 - _fsBeatScale) * 0.08;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(_fsRotation);
+
+        const bandColors = [
+            '#ff2233', '#ff6622', '#ffaa00', '#00ccff',
+            '#0088ff', '#8844ff', '#aa22ff', '#cc44ff'
+        ];
+
+        for (let i = 0; i < 8; i++) {
+            const amp = spectrum[i] || 0;
+            const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+            const mirrorAngle = angle + Math.PI;
+
+            const baseR = minDim * 0.15;
+            const maxR = minDim * 0.3 * _fsBeatScale;
+            const arcR = baseR + amp * maxR;
+            const arcWidth = minDim * 0.04;
+
+            // Draw arc pair (symmetric)
+            for (const a of [angle, mirrorAngle]) {
+                ctx.beginPath();
+                ctx.arc(0, 0, arcR, a - 0.15, a + 0.15);
+                ctx.lineWidth = arcWidth * (0.5 + amp * 0.5);
+                ctx.strokeStyle = bandColors[i];
+                ctx.globalAlpha = 0.3 + amp * 0.7;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // Inner glow arc
+                ctx.beginPath();
+                ctx.arc(0, 0, arcR * 0.7, a - 0.1, a + 0.1);
+                ctx.lineWidth = arcWidth * 0.3;
+                ctx.strokeStyle = theme.primary;
+                ctx.globalAlpha = amp * 0.4;
+                ctx.stroke();
+            }
+        }
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(0, 0, 4 + state.vizPhase * 3, 0, Math.PI * 2);
+        ctx.fillStyle = theme.primary;
+        ctx.globalAlpha = 0.6;
+        ctx.fill();
+
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+    // Placeholder stubs for modes 2-5 (implemented in later tasks)
+    function drawFsParticleNebula(w, h, cx, cy, theme) {
+        ctx.fillStyle = theme.primary;
+        ctx.globalAlpha = 0.3;
+        ctx.font = '24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Particle Nebula', cx, cy);
+        ctx.globalAlpha = 1.0;
+    }
+    function drawFsWaveformTerrain(w, h, cx, cy, theme) {
+        ctx.fillStyle = theme.primary;
+        ctx.globalAlpha = 0.3;
+        ctx.font = '24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Waveform Terrain', cx, cy);
+        ctx.globalAlpha = 1.0;
+    }
+    function drawFsKaleidoscope(w, h, cx, cy, theme) {
+        ctx.fillStyle = theme.primary;
+        ctx.globalAlpha = 0.3;
+        ctx.font = '24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Geometric Kaleidoscope', cx, cy);
+        ctx.globalAlpha = 1.0;
+    }
+    function drawFsWaterfall(w, h, cx, cy, theme) {
+        ctx.fillStyle = theme.primary;
+        ctx.globalAlpha = 0.3;
+        ctx.font = '24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Frequency Waterfall', cx, cy);
+        ctx.globalAlpha = 1.0;
+    }
+    function drawFsOverlays(w, h) {
+        // Mode name overlay
+        if (state.vizModeNameAlpha > 0.01) {
+            const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
+            ctx.save();
+            ctx.font = 'bold 32px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = theme.primary;
+            ctx.globalAlpha = state.vizModeNameAlpha;
+            ctx.fillText(state.vizModeNameText || '', w / 2, h / 2);
+            ctx.restore();
+            state.vizModeNameAlpha -= 0.008;
+            if (state.vizModeNameAlpha < 0) state.vizModeNameAlpha = 0;
+        }
     }
 
     function drawMixerEffects() {
@@ -2115,7 +2307,11 @@
                 e.preventDefault();
                 break;
             case 'Escape':
-                closeEQPanel();
+                if (state.vizFullscreen) {
+                    exitVizFullscreen();
+                } else {
+                    closeEQPanel();
+                }
                 e.preventDefault();
                 break;
         }
@@ -2129,6 +2325,51 @@
                 loadPreset(num - 1);
             }
             e.preventDefault();
+        }
+    });
+
+    // Global keyboard shortcuts for visualizer
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.key === 'v' || e.key === 'V') {
+            if (state.vizFullscreen) exitVizFullscreen();
+            else enterVizFullscreen();
+            e.preventDefault();
+            return;
+        }
+
+        if (state.vizFullscreen) {
+            switch (e.key) {
+                case 'ArrowLeft':
+                    state.vizFsMode = (state.vizFsMode - 1 + VIZ_FS_MODES.length) % VIZ_FS_MODES.length;
+                    localStorage.setItem('mixer-viz-fsmode', state.vizFsMode);
+                    state.vizModeNameAlpha = 1.0;
+                    state.vizModeNameText = VIZ_FS_MODES[state.vizFsMode];
+                    markDirty();
+                    e.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    state.vizFsMode = (state.vizFsMode + 1) % VIZ_FS_MODES.length;
+                    localStorage.setItem('mixer-viz-fsmode', state.vizFsMode);
+                    state.vizModeNameAlpha = 1.0;
+                    state.vizModeNameText = VIZ_FS_MODES[state.vizFsMode];
+                    markDirty();
+                    e.preventDefault();
+                    break;
+                case 'ArrowUp':
+                    state.vizThemeIdx = (state.vizThemeIdx - 1 + VIZ_THEMES.length) % VIZ_THEMES.length;
+                    localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
+                    markDirty();
+                    e.preventDefault();
+                    break;
+                case 'ArrowDown':
+                    state.vizThemeIdx = (state.vizThemeIdx + 1) % VIZ_THEMES.length;
+                    localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
+                    markDirty();
+                    e.preventDefault();
+                    break;
+            }
         }
     });
 
@@ -2401,6 +2642,13 @@
                 updateVolumes();
                 animating = true;
             }
+        }
+
+        if (state.vizFullscreen) {
+            drawVisualizerFrame();
+            _needsRedraw = false;
+            requestAnimationFrame(animationLoop);
+            return;
         }
 
         if (animating || _needsRedraw) {
