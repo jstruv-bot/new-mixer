@@ -88,8 +88,8 @@ class TestWebSocket:
         assert not socketio_client.is_connected()
 
     def test_set_volume_event(self, socketio_client):
-        """Verify set_volume handler calls set_device_volume."""
-        with patch.object(server, "set_device_volume", return_value=True) as mock_sv:
+        """Verify set_volume handler calls audio_router.set_volume."""
+        with patch.object(server.audio_router, "set_volume") as mock_sv:
             socketio_client.emit("set_volume", {
                 "device_id": "test-device-1",
                 "volume": 0.75,
@@ -124,7 +124,7 @@ class TestRESTEndpoints:
 
     def test_post_volume_valid(self, client):
         """POST /api/volume succeeds with valid data."""
-        with patch.object(server, "set_device_volume", return_value=True):
+        with patch.object(server.audio_router, "set_volume"):
             resp = client.post("/api/volume", json={
                 "device_id": "test-device-1",
                 "volume": 0.5,
@@ -251,29 +251,64 @@ class TestCrossfadeCurves:
 # ---------------------------------------------------------------------------
 
 
-class TestMute:
-    """Per-device mute tests."""
+class TestSpotifyEndpoints:
+    """Tests for newer Spotify API endpoints."""
 
-    def test_set_mute_event(self, socketio_client):
-        with patch.object(server_module.audio_router, 'set_volume'):
-            with patch.object(server_module, 'set_device_volume', return_value=True):
-                socketio_client.emit('set_mute', {'device_id': 'd1', 'muted': True})
-                with server_module._state_lock:
-                    assert server_module._muted_devices.get('d1') is True
+    def test_spotify_seek(self, client):
+        server_module._spotify_token = {
+            'access_token': 'fake',
+            'refresh_token': 'fake-refresh',
+            'expires_at': time.time() + 3600
+        }
+        mock_resp = MagicMock()
+        mock_resp.status_code = 204
+        with patch('server.http_requests.put', return_value=mock_resp) as mock_put:
+            resp = client.post('/api/spotify/seek', json={'position_ms': 30000})
+            assert resp.status_code == 200
+            assert 'position_ms=30000' in mock_put.call_args[0][0]
 
-    def test_unmute_event(self, socketio_client):
-        with patch.object(server_module.audio_router, 'set_volume'):
-            with patch.object(server_module, 'set_device_volume', return_value=True):
-                socketio_client.emit('set_mute', {'device_id': 'd1', 'muted': True})
-                socketio_client.emit('set_mute', {'device_id': 'd1', 'muted': False})
-                with server_module._state_lock:
-                    assert server_module._muted_devices.get('d1') is False
+    def test_spotify_seek_no_token(self, client):
+        server_module._spotify_token = None
+        resp = client.post('/api/spotify/seek', json={'position_ms': 0})
+        assert resp.status_code == 401
 
-    def test_mute_sets_volume_zero(self, socketio_client):
-        with patch.object(server_module.audio_router, 'set_volume') as mock_vol:
-            with patch.object(server_module, 'set_device_volume', return_value=True):
-                socketio_client.emit('set_mute', {'device_id': 'd1', 'muted': True})
-                mock_vol.assert_called_with('d1', 0.0)
+    def test_spotify_audio_features(self, client):
+        server_module._spotify_token = {
+            'access_token': 'fake',
+            'refresh_token': 'fake-refresh',
+            'expires_at': time.time() + 3600
+        }
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {'tempo': 128.5}
+        with patch('server.http_requests.get', return_value=mock_resp):
+            resp = client.get('/api/spotify/audio-features/abc123')
+            data = resp.get_json()
+            assert data['tempo'] == 128.5
+
+    def test_spotify_audio_features_fallback(self, client):
+        server_module._spotify_token = {
+            'access_token': 'fake',
+            'refresh_token': 'fake-refresh',
+            'expires_at': time.time() + 3600
+        }
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        with patch('server.http_requests.get', return_value=mock_resp):
+            resp = client.get('/api/spotify/audio-features/bad_id')
+            data = resp.get_json()
+            assert data['tempo'] == 120  # fallback BPM
+
+    def test_set_client_id(self, client):
+        resp = client.post('/api/spotify/client-id',
+                           json={'client_id': 'test-id-123'})
+        assert resp.status_code == 200
+        assert server_module.SPOTIFY_CLIENT_ID == 'test-id-123'
+
+    def test_set_client_id_empty(self, client):
+        resp = client.post('/api/spotify/client-id',
+                           json={'client_id': ''})
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -383,14 +418,13 @@ class TestGroups:
         socketio_client.emit('set_group', {
             'group_id': 'g1', 'name': 'Test', 'device_ids': ['d1', 'd2']
         })
-        with patch.object(server_module, 'set_device_volume', return_value=True):
-            with patch.object(server_module.audio_router, 'set_volume') as mock_vol:
-                socketio_client.emit('set_volume', {'device_id': 'd1', 'volume': 0.7})
-                # Both d1 and d2 should get volume set
-                calls = mock_vol.call_args_list
-                device_ids_called = [c[0][0] for c in calls]
-                assert 'd1' in device_ids_called
-                assert 'd2' in device_ids_called
+        with patch.object(server_module.audio_router, 'set_volume') as mock_vol:
+            socketio_client.emit('set_volume', {'device_id': 'd1', 'volume': 0.7})
+            # Both d1 and d2 should get volume set
+            calls = mock_vol.call_args_list
+            device_ids_called = [c[0][0] for c in calls]
+            assert 'd1' in device_ids_called
+            assert 'd2' in device_ids_called
 
 
 # ---------------------------------------------------------------------------
@@ -402,11 +436,10 @@ class TestVolumeRestore:
     """Auto-reconnect volume restore tests."""
 
     def test_volume_remembered_on_set(self, socketio_client):
-        with patch.object(server_module, 'set_device_volume', return_value=True):
-            with patch.object(server_module.audio_router, 'set_volume'):
-                socketio_client.emit('set_volume', {'device_id': 'd1', 'volume': 0.65})
-                with server_module._state_lock:
-                    assert abs(server_module._last_known_volumes.get('d1', 0) - 0.65) < 0.01
+        with patch.object(server_module.audio_router, 'set_volume'):
+            socketio_client.emit('set_volume', {'device_id': 'd1', 'volume': 0.65})
+            with server_module._state_lock:
+                assert abs(server_module._last_known_volumes.get('d1', 0) - 0.65) < 0.01
 
     def test_eq_remembered_on_set(self, socketio_client):
         with patch.object(server_module.audio_router, 'set_eq'):
@@ -416,22 +449,13 @@ class TestVolumeRestore:
                 assert eq is not None
                 assert abs(eq['bass'] - 0.3) < 0.01
 
-    def test_mute_remembered(self, socketio_client):
-        with patch.object(server_module.audio_router, 'set_volume'):
-            with patch.object(server_module, 'set_device_volume', return_value=True):
-                socketio_client.emit('set_mute', {'device_id': 'd1', 'muted': True})
-                with server_module._state_lock:
-                    assert server_module._last_known_mute.get('d1') is True
-
     def test_restore_devices_applies_volume(self):
         with server_module._state_lock:
             server_module._last_known_volumes['d1'] = 0.7
-            server_module._last_known_mute['d1'] = False
-        with patch.object(server_module, 'set_device_volume', return_value=True) as mock_sv:
-            with patch.object(server_module.audio_router, 'set_volume'):
-                with patch.object(server_module.audio_router, 'set_eq'):
-                    restored = server_module._restore_devices({'d1'}, [{'id': 'd1', 'name': 'S1', 'volume': 1.0}])
-                    mock_sv.assert_called_with('d1', 0.7)
+        with patch.object(server_module.audio_router, 'set_volume') as mock_vol:
+            with patch.object(server_module.audio_router, 'set_eq'):
+                restored = server_module._restore_devices({'d1'}, [{'id': 'd1', 'name': 'S1', 'volume': 1.0}])
+                mock_vol.assert_called_with('d1', 0.7)
 
 
 # ---------------------------------------------------------------------------

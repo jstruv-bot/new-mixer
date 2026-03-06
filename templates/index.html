@@ -341,6 +341,16 @@
     const statusText = document.getElementById("status-text");
     const btnRefresh = document.getElementById("btn-refresh");
 
+    // ── HiDPI canvas scaling ─────────────────────────────────────────
+    const DPR = window.devicePixelRatio || 1;
+    if (DPR > 1) {
+        canvas.width  = CANVAS_SIZE * DPR;
+        canvas.height = CANVAS_SIZE * DPR;
+        canvas.style.width  = CANVAS_SIZE + 'px';
+        canvas.style.height = CANVAS_SIZE + 'px';
+        ctx.scale(DPR, DPR);
+    }
+
     // ── Application state ─────────────────────────────────────────────
     const state = {
         devices:        [],                               // from /api/devices
@@ -353,7 +363,7 @@
         audioLevels:    {},      // device_id -> raw peak from server
         displayLevels:  {},      // device_id -> smoothed display level for meter arcs
         curveType:      localStorage.getItem('mixer-curve') || 'inverse-square',
-        mutedDevices:   new Set(),  // kept for preset compat
+        mutedDevices:   new Set(),  // legacy: kept for preset compatibility
         eqTarget:       null,    // device_id of currently open EQ panel
         groups:         {},      // group_id -> {name, deviceIds: Set, color}
         groupMembership: {},     // device_id -> group_id
@@ -419,6 +429,7 @@
         rebuildDeviceMap();
         updateStatusBar();
         updateVolumes();
+        markDirty();
     });
 
     socket.on("router_status", (data) => {
@@ -448,6 +459,7 @@
 
     socket.on("audio_levels", (levels) => {
         state.audioLevels = levels;
+        markDirty();
     });
 
     // Spotify state + cached DOM refs
@@ -1290,10 +1302,23 @@
             const div = document.createElement('div');
             div.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;';
             const isEditing = state.editingGroup === gid;
-            div.innerHTML = '<span style="width:10px;height:10px;border-radius:50%;background:' + g.color + ';display:inline-block;"></span>'
-                + '<span style="flex:1;font-size:0.85rem;color:#c0c0d8;">' + g.name + ' (' + g.deviceIds.size + ')</span>'
-                + '<button data-gid="' + gid + '" class="group-edit-btn" style="font-size:0.75rem;padding:0.2rem 0.5rem;' + (isEditing ? 'color:#00d4ff;border-color:#00d4ff;' : '') + '">' + (isEditing ? 'Done' : 'Edit') + '</button>'
-                + '<button data-gid="' + gid + '" class="group-del-btn" style="font-size:0.75rem;padding:0.2rem 0.5rem;color:#ff6b6b;border-color:#ff6b6b;">Del</button>';
+            // Build with DOM APIs to avoid innerHTML XSS
+            const dot = document.createElement('span');
+            dot.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + g.color;
+            const label = document.createElement('span');
+            label.style.cssText = 'flex:1;font-size:0.85rem;color:#c0c0d8;';
+            label.textContent = g.name + ' (' + g.deviceIds.size + ')';
+            const editBtn = document.createElement('button');
+            editBtn.dataset.gid = gid;
+            editBtn.className = 'group-edit-btn';
+            editBtn.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;' + (isEditing ? 'color:#00d4ff;border-color:#00d4ff;' : '');
+            editBtn.textContent = isEditing ? 'Done' : 'Edit';
+            const delBtn = document.createElement('button');
+            delBtn.dataset.gid = gid;
+            delBtn.className = 'group-del-btn';
+            delBtn.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;color:#ff6b6b;border-color:#ff6b6b;';
+            delBtn.textContent = 'Del';
+            div.append(dot, label, editBtn, delBtn);
             list.appendChild(div);
         }
         list.querySelectorAll('.group-edit-btn').forEach(btn => {
@@ -1351,10 +1376,6 @@
         input.value = '';
         renderGroupList();
         syncGroupToServer(gid);
-    });
-
-    socket.on('group_update', (data) => {
-        // Server-authoritative sync on reconnect — merge if needed
     });
 
     // ── Preset System ──────────────────────────────────────────────────
@@ -1506,19 +1527,26 @@
     // ── Animation loop ─────────────────────────────────────────────────
 
     const LERP_FACTOR = 0.15;
+    let _needsRedraw = true;  // dirty flag for idle detection
+
+    /** Mark canvas as needing a redraw. */
+    function markDirty() { _needsRedraw = true; }
 
     /**
      * Continuous animation loop:
      * - Interpolates displayVolumes toward targetVolumes (smooth transitions)
-     * - Redraws the mixer every frame
+     * - Only redraws when state has actually changed
      */
     function animationLoop() {
+        let animating = false;
+
         // Lerp display volumes toward target volumes
         for (const id in state.targetVolumes) {
             const target  = state.targetVolumes[id];
             const current = state.displayVolumes[id] || 0;
             if (Math.abs(target - current) > 0.001) {
                 state.displayVolumes[id] = current + (target - current) * LERP_FACTOR;
+                animating = true;
             } else {
                 state.displayVolumes[id] = target;
             }
@@ -1529,9 +1557,10 @@
                 state.displayVolumes[id] *= (1 - LERP_FACTOR);
                 if (state.displayVolumes[id] < 0.001) {
                     delete state.displayVolumes[id];
-                    // Clean up stale display levels too
                     delete state.displayLevels[id];
                     delete state.lastSentVolumes[id];
+                } else {
+                    animating = true;
                 }
             }
         }
@@ -1541,9 +1570,12 @@
             const target = state.audioLevels[id];
             const current = state.displayLevels[id] || 0;
             if (target > current) {
-                state.displayLevels[id] = target; // fast attack
+                state.displayLevels[id] = target;
+                animating = true;
             } else {
-                state.displayLevels[id] = current + (target - current) * LERP_FACTOR;
+                const newVal = current + (target - current) * LERP_FACTOR;
+                if (Math.abs(newVal - current) > 0.001) animating = true;
+                state.displayLevels[id] = newVal;
             }
         }
 
@@ -1561,6 +1593,7 @@
                 state.controlPoint.y += dy * 0.15;
             }
             updateVolumes();
+            animating = true;
         }
 
         // Auto-bounce — move control point between speakers when music is playing
@@ -1598,10 +1631,14 @@
                 }
 
                 updateVolumes();
+                animating = true;
             }
         }
 
-        drawMixer();
+        if (animating || _needsRedraw) {
+            drawMixer();
+            _needsRedraw = false;
+        }
         requestAnimationFrame(animationLoop);
     }
 
