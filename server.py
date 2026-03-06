@@ -261,9 +261,9 @@ class AudioRouter:
         self._delay_buffers = {}        # device_id -> deque of audio chunk bytes
         self._effects = {}              # device_id -> {type, rate_hz, depth, phase}
         self._latency = {}              # device_id -> latest write latency in ms
-        self._source_muted = False      # True if we muted the loopback source
+        self._source_muted = False      # True if we silenced the loopback source
         self._source_endpoint = None    # IAudioEndpointVolume of source device
-        self._source_prev_mute = False  # original mute state to restore
+        self._source_prev_vol = 1.0     # original volume to restore
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -385,7 +385,12 @@ class AudioRouter:
             self._volumes[device_id] = max(0.0, min(1.0, float(volume)))
 
     def _mute_source(self):
-        """Mute the loopback source device so audio only plays from BT speakers."""
+        """Silence the loopback source by setting its volume to minimum.
+
+        WASAPI loopback captures the pre-volume stream, so the BT speakers
+        still get full audio even though the source device is silent.
+        We store the previous volume to restore on stop.
+        """
         try:
             _init_com()
             from ctypes import cast, POINTER
@@ -395,24 +400,27 @@ class AudioRouter:
             interface = speakers.Activate(
                 IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             ev = cast(interface, POINTER(IAudioEndpointVolume))
-            self._source_prev_mute = bool(ev.GetMute())
-            ev.SetMute(True, None)
+            self._source_prev_vol = ev.GetMasterVolumeLevelScalar()
+            ev.SetMasterVolumeLevelScalar(0.0, None)
             self._source_endpoint = ev
             self._source_muted = True
-            print("[AudioRouter] Muted source device")
+            print(f"[AudioRouter] Source device silenced "
+                  f"(was {self._source_prev_vol:.0%})")
         except Exception as exc:
-            print(f"[AudioRouter] Could not mute source: {exc}")
+            print(f"[AudioRouter] Could not silence source: {exc}")
 
     def _unmute_source(self):
-        """Restore the loopback source device's mute state."""
+        """Restore the loopback source device's volume."""
         if not self._source_muted:
             return
         try:
             if self._source_endpoint:
-                self._source_endpoint.SetMute(self._source_prev_mute, None)
-                print("[AudioRouter] Restored source device mute state")
+                self._source_endpoint.SetMasterVolumeLevelScalar(
+                    self._source_prev_vol, None)
+                print(f"[AudioRouter] Source volume restored to "
+                      f"{self._source_prev_vol:.0%}")
         except Exception as exc:
-            print(f"[AudioRouter] Could not unmute source: {exc}")
+            print(f"[AudioRouter] Could not restore source volume: {exc}")
         self._source_muted = False
         self._source_endpoint = None
 
