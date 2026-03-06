@@ -385,27 +385,38 @@ class AudioRouter:
             self._volumes[device_id] = max(0.0, min(1.0, float(volume)))
 
     def _mute_source(self):
-        """Silence the loopback source by setting its volume to minimum.
+        """Silence the loopback source by setting its volume to 0.
 
-        WASAPI loopback captures the pre-volume stream, so the BT speakers
-        still get full audio even though the source device is silent.
-        We store the previous volume to restore on stop.
+        Finds the render device matching the loopback name and uses
+        pycaw's EndpointVolume (same API used by set_device_volume).
         """
+        if not self._loopback_info:
+            return
         try:
             _init_com()
-            from ctypes import cast, POINTER
-            from comtypes import CLSCTX_ALL
-            from pycaw.pycaw import IAudioEndpointVolume
-            speakers = AudioUtilities.GetSpeakers()
-            interface = speakers.Activate(
-                IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            ev = cast(interface, POINTER(IAudioEndpointVolume))
-            self._source_prev_vol = ev.GetMasterVolumeLevelScalar()
-            ev.SetMasterVolumeLevelScalar(0.0, None)
-            self._source_endpoint = ev
-            self._source_muted = True
-            print(f"[AudioRouter] Source device silenced "
-                  f"(was {self._source_prev_vol:.0%})")
+            # Loopback name is like "Device Name [Loopback]" — strip suffix
+            lb_name = self._loopback_info.get("name", "")
+            # Also strip leading index like "3 - "
+            source_name = lb_name.replace("[Loopback]", "").strip()
+            if source_name and source_name[0].isdigit() and " - " in source_name:
+                source_name = source_name.split(" - ", 1)[1]
+
+            for device in AudioUtilities.GetAllDevices():
+                if not _is_render_device(device):
+                    continue
+                fname = device.FriendlyName or ""
+                if source_name and source_name.lower() in fname.lower():
+                    ev = device.EndpointVolume
+                    if ev:
+                        self._source_prev_vol = ev.GetMasterVolumeLevelScalar()
+                        ev.SetMasterVolumeLevelScalar(0.0, None)
+                        self._source_endpoint = ev
+                        self._source_muted = True
+                        print(f"[AudioRouter] Silenced '{fname}' "
+                              f"(was {self._source_prev_vol:.0%})")
+                        return
+            print(f"[AudioRouter] Could not find source device "
+                  f"matching '{source_name}'")
         except Exception as exc:
             print(f"[AudioRouter] Could not silence source: {exc}")
 
