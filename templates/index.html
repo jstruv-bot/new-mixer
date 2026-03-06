@@ -1370,11 +1370,111 @@
 
     // Placeholder stubs for modes 2-5 (implemented in later tasks)
     function drawFsParticleNebula(w, h, cx, cy, theme) {
-        ctx.fillStyle = theme.primary;
-        ctx.globalAlpha = 0.3;
-        ctx.font = '24px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Particle Nebula', cx, cy);
+        const spectrum = state.vizSpectrum;
+        const particles = state.vizFsParticles;
+        const maxParticles = 800;
+        const bass = (spectrum[0] + spectrum[1]) / 2;
+        const treble = (spectrum[5] + spectrum[6] + spectrum[7]) / 3;
+        const energy = state.djEnergy || 0;
+
+        // Spawn particles continuously
+        const spawnRate = Math.floor(2 + energy * 6);
+        for (let s = 0; s < spawnRate && particles.length < maxParticles; s++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 20 + Math.random() * 60;
+            particles.push({
+                x: cx + Math.cos(angle) * dist,
+                y: cy + Math.sin(angle) * dist,
+                angle: angle,
+                angularVel: (0.005 + Math.random() * 0.015) * (Math.random() < 0.5 ? 1 : -1),
+                radius: dist,
+                radialVel: 0,
+                life: 1.0,
+                decay: 0.001 + Math.random() * 0.003,
+                size: 1 + Math.random() * 2,
+                hueShift: Math.random() * 60 - 30,
+            });
+        }
+
+        // Beat burst
+        if (state.vizBeat) {
+            const burstCount = Math.min(20, maxParticles - particles.length);
+            for (let b = 0; b < burstCount; b++) {
+                const angle = Math.random() * Math.PI * 2;
+                particles.push({
+                    x: cx + Math.cos(angle) * 10,
+                    y: cy + Math.sin(angle) * 10,
+                    angle: angle,
+                    angularVel: (0.01 + Math.random() * 0.03) * (Math.random() < 0.5 ? 1 : -1),
+                    radius: 10 + Math.random() * 30,
+                    radialVel: 2 + Math.random() * 4,
+                    life: 1.0,
+                    decay: 0.003 + Math.random() * 0.005,
+                    size: 2 + Math.random() * 3,
+                    hueShift: Math.random() * 60 - 30,
+                });
+            }
+        }
+
+        // Update and draw particles
+        const minDim = Math.min(w, h);
+        const maxDist = minDim * 0.45;
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+
+            // Orbital motion
+            p.angle += p.angularVel;
+
+            // Bass pushes outward, treble contracts
+            const radialForce = bass * 1.5 - treble * 0.8;
+            p.radialVel += radialForce * 0.3;
+            p.radialVel *= 0.95;  // damping
+            p.radius += p.radialVel;
+            p.radius = Math.max(5, p.radius);
+
+            p.x = cx + Math.cos(p.angle) * p.radius;
+            p.y = cy + Math.sin(p.angle) * p.radius;
+            p.life -= p.decay;
+
+            // Remove dead or out-of-bounds
+            if (p.life <= 0 || p.radius > maxDist) {
+                particles.splice(i, 1);
+                continue;
+            }
+
+            // Draw
+            const alpha = p.life * (0.3 + energy * 0.5);
+            const distFromCenter = p.radius / maxDist;
+            const drawSize = p.size * (1.5 - distFromCenter);
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0.5, drawSize), 0, Math.PI * 2);
+            ctx.fillStyle = theme.primary;
+            ctx.globalAlpha = Math.min(1, alpha);
+            ctx.fill();
+
+            // Occasional glow for larger particles
+            if (drawSize > 2) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, drawSize * 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = theme.secondary;
+                ctx.globalAlpha = alpha * 0.15;
+                ctx.fill();
+            }
+        }
+
+        // Center glow
+        const glowR = 30 + bass * 40;
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+        grad.addColorStop(0, theme.primary);
+        grad.addColorStop(1, 'transparent');
+        ctx.beginPath();
+        ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = 0.2 + energy * 0.3;
+        ctx.fill();
+
         ctx.globalAlpha = 1.0;
     }
     function drawFsWaveformTerrain(w, h, cx, cy, theme) {
