@@ -190,19 +190,24 @@
 
         /* ── Spotify Widget ──────────────────────────────────── */
         .spotify-widget {
-            margin-top: 1.2rem; display: flex; align-items: center; gap: 0.8rem;
+            margin-top: 1.2rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem;
             background: rgba(30, 215, 96, 0.06); border: 1px solid rgba(30, 215, 96, 0.2);
-            border-radius: 8px; padding: 0.6rem 1rem; max-width: 420px;
+            border-radius: 8px; padding: 0.6rem 1rem 0.8rem; max-width: 480px;
         }
+        .spotify-top { display: flex; align-items: center; gap: 0.8rem; width: 100%; }
         .spotify-art { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; }
         .spotify-info { flex: 1; min-width: 0; }
         .spotify-track { font-size: 0.85rem; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .spotify-artist { font-size: 0.75rem; color: #8888aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .spotify-progress { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 6px; cursor: pointer; position: relative; }
+        .spotify-seek-row { display: flex; align-items: center; gap: 0.5rem; width: 100%; }
+        .spotify-time { font-size: 0.65rem; color: #8888aa; min-width: 32px; font-variant-numeric: tabular-nums; }
+        .spotify-time-left { text-align: right; }
+        .spotify-time-right { text-align: left; }
+        .spotify-progress { flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative; }
         .spotify-progress:hover { height: 8px; }
-        .spotify-bar-fill { height: 100%; background: #1ed760; border-radius: 3px; width: 0%; pointer-events: none; transition: none; }
+        .spotify-bar-fill { height: 100%; background: #1ed760; border-radius: 3px; width: 0%; pointer-events: none; transition: none; position: relative; }
         .spotify-progress:hover .spotify-bar-fill::after {
-            content: ''; position: absolute; right: -5px; top: 50%; transform: translateY(-50%);
+            content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%);
             width: 12px; height: 12px; background: #fff; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.4);
         }
         .spotify-controls { display: flex; gap: 0.3rem; }
@@ -285,18 +290,24 @@
     </div>
 
     <div id="spotify-widget" class="spotify-widget" style="display:none;">
-        <img id="spotify-art" class="spotify-art" src="" alt="Album art">
-        <div class="spotify-info">
-            <div id="spotify-track" class="spotify-track"></div>
-            <div id="spotify-artist" class="spotify-artist"></div>
+        <div class="spotify-top">
+            <img id="spotify-art" class="spotify-art" src="" alt="Album art">
+            <div class="spotify-info">
+                <div id="spotify-track" class="spotify-track"></div>
+                <div id="spotify-artist" class="spotify-artist"></div>
+            </div>
+            <div class="spotify-controls">
+                <button id="spotify-prev" type="button" title="Previous">&#9664;&#9664;</button>
+                <button id="spotify-playpause" type="button" title="Play/Pause">&#9654;</button>
+                <button id="spotify-next" type="button" title="Next">&#9654;&#9654;</button>
+            </div>
+        </div>
+        <div class="spotify-seek-row">
+            <span id="spotify-time-current" class="spotify-time spotify-time-left">0:00</span>
             <div class="spotify-progress">
                 <div id="spotify-bar" class="spotify-bar-fill"></div>
             </div>
-        </div>
-        <div class="spotify-controls">
-            <button id="spotify-prev" type="button" title="Previous">&#9664;&#9664;</button>
-            <button id="spotify-playpause" type="button" title="Play/Pause">&#9654;</button>
-            <button id="spotify-next" type="button" title="Next">&#9654;&#9654;</button>
+            <span id="spotify-time-duration" class="spotify-time spotify-time-right">0:00</span>
         </div>
     </div>
     <div id="spotify-connect" class="spotify-connect">
@@ -458,7 +469,15 @@
         art:       document.getElementById('spotify-art'),
         playPause: document.getElementById('spotify-playpause'),
         bar:       document.getElementById('spotify-bar'),
+        timeCur:   document.getElementById('spotify-time-current'),
+        timeDur:   document.getElementById('spotify-time-duration'),
     };
+
+    function fmtTime(ms) {
+        const s = Math.floor(ms / 1000);
+        const m = Math.floor(s / 60);
+        return m + ':' + String(s % 60).padStart(2, '0');
+    }
 
     socket.on("spotify_update", (data) => {
         if (data.track) {
@@ -478,14 +497,17 @@
         }
     });
 
-    // Progress bar interpolation
+    // Progress bar interpolation + time display
     let _seekDragging = false;
     setInterval(() => {
-        if (_seekDragging || !spotifyPlaying || !spotifyDurationMs) return;
-        const elapsed = Date.now() - spotifyLastUpdate;
-        const current = spotifyProgressMs + elapsed;
-        const pct = Math.min(100, (current / spotifyDurationMs) * 100);
+        if (_seekDragging) return;
+        if (!spotifyDurationMs) return;
+        const elapsed = spotifyPlaying ? Date.now() - spotifyLastUpdate : 0;
+        const current = Math.min(spotifyProgressMs + elapsed, spotifyDurationMs);
+        const pct = (current / spotifyDurationMs) * 100;
         spotifyEls.bar.style.width = pct + '%';
+        spotifyEls.timeCur.textContent = fmtTime(current);
+        spotifyEls.timeDur.textContent = fmtTime(spotifyDurationMs);
     }, 250);
 
     // Seek bar interaction (click + drag)
@@ -508,7 +530,8 @@
 
     document.addEventListener('mousemove', (e) => {
         if (!_seekDragging) return;
-        seekFromEvent(e);
+        const posMs = seekFromEvent(e);
+        spotifyEls.timeCur.textContent = fmtTime(posMs);
     });
 
     document.addEventListener('mouseup', (e) => {
