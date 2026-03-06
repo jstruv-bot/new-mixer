@@ -881,3 +881,52 @@ class TestAutoDJEnergy:
         server_module.audio_router._energy_level = 0.75
         assert abs(server_module.audio_router.energy_level - 0.75) < 0.001
         server_module.audio_router._energy_level = 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestSpatialAudio
+# ---------------------------------------------------------------------------
+
+
+class TestSpatialAudio:
+    """3D spatial audio (pan + stereo separation) tests."""
+
+    def test_set_pan_stores(self):
+        server_module.audio_router.set_pan('d1', 0.5)
+        assert server_module.audio_router._pan['d1'] == 0.5
+        server_module.audio_router._pan.pop('d1', None)
+
+    def test_set_pan_clamped(self):
+        server_module.audio_router.set_pan('d1', 2.0)
+        assert server_module.audio_router._pan['d1'] == 1.0
+        server_module.audio_router.set_pan('d1', -3.0)
+        assert server_module.audio_router._pan['d1'] == -1.0
+        server_module.audio_router._pan.pop('d1', None)
+
+    def test_set_stereo_separation(self):
+        server_module.audio_router.set_stereo_separation(0.75)
+        assert server_module.audio_router._stereo_sep == 0.75
+        server_module.audio_router._stereo_sep = 0.0
+
+    def test_set_stereo_separation_clamped(self):
+        server_module.audio_router.set_stereo_separation(1.5)
+        assert server_module.audio_router._stereo_sep == 1.0
+        server_module.audio_router.set_stereo_separation(-0.5)
+        assert server_module.audio_router._stereo_sep == 0.0
+
+    def test_set_pan_ws(self, socketio_client):
+        socketio_client.emit('set_pan', {'device_id': 'd1', 'pan': -0.8})
+        assert abs(server_module.audio_router._pan.get('d1', 0) - (-0.8)) < 0.001
+        server_module.audio_router._pan.pop('d1', None)
+
+    def test_set_stereo_sep_ws(self, socketio_client):
+        socketio_client.emit('set_stereo_separation', {'value': 0.6})
+        assert abs(server_module.audio_router._stereo_sep - 0.6) < 0.001
+        server_module.audio_router._stereo_sep = 0.0
+
+    def test_enrich_includes_pan(self):
+        server_module.audio_router._pan['d1'] = -0.5
+        devices = [{'id': 'd1', 'name': 'Speaker 1', 'volume': 1.0}]
+        enriched = server_module._enrich_devices(devices)
+        assert enriched[0]['pan'] == -0.5
+        server_module.audio_router._pan.pop('d1', None)

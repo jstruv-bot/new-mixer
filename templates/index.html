@@ -307,6 +307,11 @@
         </select>
         <button id="btn-bounce" type="button" title="Auto-bounce between speakers">Bounce: Off</button>
         <button id="btn-autodj" type="button" title="Auto-DJ: energy-reactive crossfading between speakers">Auto-DJ: Off</button>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#888;" title="Stereo separation: 0% = mono, 100% = full L/R split">
+            <label for="stereo-sep" style="white-space:nowrap;">3D:</label>
+            <input type="range" id="stereo-sep" min="0" max="100" value="0" step="5" style="width:60px;height:14px;accent-color:#00d4ff;">
+            <span id="stereo-sep-val" style="min-width:28px;">0%</span>
+        </span>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
         <button id="btn-groups" type="button">Groups</button>
         <button id="btn-dj" type="button" title="DJ features menu">DJ</button>
@@ -349,6 +354,11 @@
             <label>Delay</label>
             <input type="range" id="eq-delay" min="0" max="500" value="0" step="5">
             <span id="eq-delay-val">0ms</span>
+        </div>
+        <div class="eq-slider-row">
+            <label>Pan</label>
+            <input type="range" id="eq-pan" min="-100" max="100" value="0" step="1">
+            <span id="eq-pan-val">C</span>
         </div>
     </div>
 
@@ -560,6 +570,9 @@
         djPrimarySpeaker: 0,     // index of current "home" speaker
         djEnergy:       0,       // smoothed energy level from backend (0-1)
         djLastTrackId:  '',      // detect track changes for rotation
+        // 3D spatial audio
+        panPositions:   JSON.parse(localStorage.getItem('mixer-pans') || '{}'),  // device_id -> pan (-1..+1)
+        stereoSep:      parseFloat(localStorage.getItem('mixer-stereo-sep') || '0'),
         // DJ features
         zoneMode:       false,   // true = free 2D placement, false = ring
         zonePositions:  JSON.parse(localStorage.getItem('mixer-zones') || '{}'),
@@ -608,6 +621,13 @@
             clearInterval(pollInterval);
             pollInterval = null;
         }
+        // Restore persisted 3D audio settings to backend
+        if (state.stereoSep > 0) {
+            socket.emit('set_stereo_separation', { value: state.stereoSep });
+        }
+        for (const [did, pan] of Object.entries(state.panPositions)) {
+            if (pan !== 0) socket.emit('set_pan', { device_id: did, pan });
+        }
     });
 
     socket.on("disconnect", () => {
@@ -624,10 +644,13 @@
     socket.on("device_update", (data) => {
         state.devices = data;
         rebuildDeviceMap();
-        // Sync min volumes from server for devices we don't have locally
+        // Sync min volumes and pan from server for devices we don't have locally
         for (const d of data) {
             if (d.min_volume > 0 && !(d.id in state.minVolumes)) {
                 state.minVolumes[d.id] = d.min_volume;
+            }
+            if (d.pan && !(d.id in state.panPositions)) {
+                state.panPositions[d.id] = d.pan;
             }
         }
         updateStatusBar();
@@ -1602,6 +1625,8 @@
     const eqMinVolVal = document.getElementById('eq-minvol-val');
     const eqDelay = document.getElementById('eq-delay');
     const eqDelayVal = document.getElementById('eq-delay-val');
+    const eqPan = document.getElementById('eq-pan');
+    const eqPanVal = document.getElementById('eq-pan-val');
     const eqDeviceName = document.getElementById('eq-device-name');
     const eqClose = document.getElementById('eq-close');
 
@@ -1621,6 +1646,9 @@
         const dly = dev.delay_ms || 0;
         eqDelay.value = dly;
         eqDelayVal.textContent = dly + 'ms';
+        const panVal = Math.round((state.panPositions[deviceId] || 0) * 100);
+        eqPan.value = panVal;
+        eqPanVal.textContent = panVal === 0 ? 'C' : (panVal < 0 ? 'L' + Math.abs(panVal) : 'R' + panVal);
         eqPanel.style.display = 'block';
     }
 
@@ -1661,6 +1689,29 @@
         eqDelayVal.textContent = ms + 'ms';
         if (!state.eqTarget) return;
         socket.emit('set_delay', { device_id: state.eqTarget, delay_ms: ms });
+    });
+
+    eqPan.addEventListener('input', () => {
+        const v = parseInt(eqPan.value);
+        eqPanVal.textContent = v === 0 ? 'C' : (v < 0 ? 'L' + Math.abs(v) : 'R' + v);
+        if (!state.eqTarget) return;
+        const pan = v / 100;
+        state.panPositions[state.eqTarget] = pan;
+        localStorage.setItem('mixer-pans', JSON.stringify(state.panPositions));
+        socket.emit('set_pan', { device_id: state.eqTarget, pan: pan });
+    });
+
+    // Global stereo separation slider
+    const stereoSepSlider = document.getElementById('stereo-sep');
+    const stereoSepVal = document.getElementById('stereo-sep-val');
+    stereoSepSlider.value = Math.round(state.stereoSep * 100);
+    stereoSepVal.textContent = stereoSepSlider.value + '%';
+    stereoSepSlider.addEventListener('input', () => {
+        const pct = parseInt(stereoSepSlider.value);
+        stereoSepVal.textContent = pct + '%';
+        state.stereoSep = pct / 100;
+        localStorage.setItem('mixer-stereo-sep', String(state.stereoSep));
+        socket.emit('set_stereo_separation', { value: state.stereoSep });
     });
 
     canvas.addEventListener('dblclick', (e) => {
@@ -1810,6 +1861,8 @@
             mutedDevices: [...state.mutedDevices],
             minVolumes: Object.assign({}, state.minVolumes),
             autoDJ: state.autoDJ,
+            panPositions: Object.assign({}, state.panPositions),
+            stereoSep: state.stereoSep,
         };
         localStorage.setItem('mixer-presets', JSON.stringify(state.presets));
         renderPresetSlots();
@@ -1838,6 +1891,23 @@
         adjBtn.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
         adjBtn.style.borderColor = state.autoDJ ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
         adjBtn.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
+        // Restore 3D audio settings
+        if (preset.panPositions) {
+            state.panPositions = Object.assign({}, preset.panPositions);
+            localStorage.setItem('mixer-pans', JSON.stringify(state.panPositions));
+            for (const [did, pan] of Object.entries(state.panPositions)) {
+                socket.emit('set_pan', { device_id: did, pan });
+            }
+        }
+        if (preset.stereoSep !== undefined) {
+            state.stereoSep = preset.stereoSep;
+            localStorage.setItem('mixer-stereo-sep', String(state.stereoSep));
+            const ssSlider = document.getElementById('stereo-sep');
+            const ssVal = document.getElementById('stereo-sep-val');
+            ssSlider.value = Math.round(state.stereoSep * 100);
+            ssVal.textContent = ssSlider.value + '%';
+            socket.emit('set_stereo_separation', { value: state.stereoSep });
+        }
         renderPresetSlots();
         showToast('Preset ' + (index + 1) + ' loaded');
     }

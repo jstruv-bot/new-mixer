@@ -266,6 +266,8 @@ class AudioRouter:
         self._source_prev_vol = 1.0     # original volume to restore
         self._source_boost = 1.0        # capture boost to compensate for lowered source vol
         self._energy_level = 0.0        # real-time RMS energy (0.0-1.0), updated by capture thread
+        self._pan = {}                  # device_id -> float (-1.0 left .. +1.0 right)
+        self._stereo_sep = 0.0          # global stereo separation (0=mono, 1=full split)
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -492,6 +494,16 @@ class AudioRouter:
             self._delay_ms[device_id] = clamped
             if clamped <= 0:
                 self._delay_buffers.pop(device_id, None)
+
+    def set_pan(self, device_id, pan):
+        """Set stereo pan position for a device (-1.0 left to +1.0 right)."""
+        with self._lock:
+            self._pan[device_id] = max(-1.0, min(1.0, float(pan)))
+
+    def set_stereo_separation(self, value):
+        """Set global stereo separation (0.0 = mono, 1.0 = full split)."""
+        with self._lock:
+            self._stereo_sep = max(0.0, min(1.0, float(value)))
 
     def set_effect(self, device_id, effect_type, rate_hz=2.0, depth=0.5):
         """Set BPM-synced effect for a device."""
@@ -818,6 +830,8 @@ class AudioRouter:
 
                 with self._lock:
                     vol = self._volumes.get(device_id, 1.0)
+                    pan = self._pan.get(device_id, 0.0)
+                    sep = self._stereo_sep
                     eq = self._eq_settings_router.get(device_id)
                     eq_snap = None
                     if eq:
@@ -841,6 +855,22 @@ class AudioRouter:
                     audio = audio.reshape(-1, self._channels)[:, :out_channels].flatten()
 
                 audio *= vol
+
+                # Stereo panning — apply per-device pan with global separation
+                effective_pan = pan * sep
+                if out_channels >= 2 and abs(effective_pan) > 0.01:
+                    # Map effective_pan from [-1, +1] to angle [0, π/2]
+                    # At pan=0 (center): equal power to both channels
+                    # At pan=-1 (left): full left, silence right
+                    # At pan=+1 (right): silence left, full right
+                    angle = (effective_pan + 1.0) * 0.5 * (math.pi / 2.0)
+                    gain_r = math.sin(angle)
+                    gain_l = math.cos(angle)
+                    left = audio[0::out_channels].copy()
+                    right = audio[1::out_channels].copy()
+                    # Mix: each output channel gets a weighted blend of L+R
+                    audio[0::out_channels] = left * gain_l + right * (1.0 - gain_l)
+                    audio[1::out_channels] = left * (1.0 - gain_r) + right * gain_r
 
                 # Apply EQ if settings exist
                 eq = eq_snap
@@ -1093,6 +1123,7 @@ def _enrich_devices(devices):
             d2["cue"] = did in _cue_members
             d2["min_volume"] = _min_volumes.get(did, 0.0)
             d2["delay_ms"] = audio_router._delay_ms.get(did, 0)
+            d2["pan"] = audio_router._pan.get(did, 0.0)
             enriched.append(d2)
         return enriched
 
@@ -1695,6 +1726,23 @@ def ws_set_delay(data):
         return
     delay_ms = max(0.0, min(500.0, float(delay_ms)))
     audio_router.set_delay(device_id, delay_ms)
+
+
+@socketio.on("set_pan")
+def ws_set_pan(data):
+    """Set stereo pan position for a speaker (-1.0 left to +1.0 right)."""
+    device_id = data.get("device_id")
+    pan = data.get("pan", 0)
+    if device_id is None:
+        return
+    audio_router.set_pan(device_id, float(pan))
+
+
+@socketio.on("set_stereo_separation")
+def ws_set_stereo_separation(data):
+    """Set global stereo separation (0.0 = mono, 1.0 = full split)."""
+    value = data.get("value", 0)
+    audio_router.set_stereo_separation(float(value))
 
 
 @socketio.on("set_zone_position")
