@@ -264,6 +264,7 @@ class AudioRouter:
         self._source_muted = False      # True if we silenced the loopback source
         self._source_endpoint = None    # IAudioEndpointVolume of source device
         self._source_prev_vol = 1.0     # original volume to restore
+        self._source_boost = 1.0        # capture boost to compensate for lowered source vol
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -384,11 +385,17 @@ class AudioRouter:
         with self._lock:
             self._volumes[device_id] = max(0.0, min(1.0, float(volume)))
 
-    def _mute_source(self):
-        """Silence the loopback source by setting its volume to 0.
+    # Minimum volume to set on the source device (2%).
+    # WASAPI loopback captures post-volume audio, so 0% = silence.
+    # We keep it at a tiny level and boost the captured signal instead.
+    _SOURCE_MIN_VOL = 0.02
 
-        Finds the render device matching the loopback name and uses
-        pycaw's EndpointVolume (same API used by set_device_volume).
+    def _mute_source(self):
+        """Reduce the loopback source to near-silent and boost capture to compensate.
+
+        WASAPI loopback captures post-volume audio, so setting the endpoint
+        to 0% would capture silence. Instead we set it to _SOURCE_MIN_VOL
+        and multiply captured audio by (prev_vol / _SOURCE_MIN_VOL).
         """
         if not self._loopback_info:
             return
@@ -409,11 +416,17 @@ class AudioRouter:
                     ev = device.EndpointVolume
                     if ev:
                         self._source_prev_vol = ev.GetMasterVolumeLevelScalar()
-                        ev.SetMasterVolumeLevelScalar(0.0, None)
+                        if self._source_prev_vol > self._SOURCE_MIN_VOL:
+                            self._source_boost = self._source_prev_vol / self._SOURCE_MIN_VOL
+                            ev.SetMasterVolumeLevelScalar(self._SOURCE_MIN_VOL, None)
+                        else:
+                            # Already very quiet — don't reduce further
+                            self._source_boost = 1.0
                         self._source_endpoint = ev
                         self._source_muted = True
-                        print(f"[AudioRouter] Silenced '{fname}' "
-                              f"(was {self._source_prev_vol:.0%})")
+                        print(f"[AudioRouter] Reduced '{fname}' to "
+                              f"{self._SOURCE_MIN_VOL:.0%} (was {self._source_prev_vol:.0%}, "
+                              f"boost={self._source_boost:.1f}x)")
                         return
             print(f"[AudioRouter] Could not find source device "
                   f"matching '{source_name}'")
@@ -434,6 +447,7 @@ class AudioRouter:
             print(f"[AudioRouter] Could not restore source volume: {exc}")
         self._source_muted = False
         self._source_endpoint = None
+        self._source_boost = 1.0
 
     def update_devices(self, bt_devices):
         """Re-sync with current BT device list. Restart if devices changed."""
@@ -699,6 +713,13 @@ class AudioRouter:
                         print(f"[AudioRouter] Capture read error: {exc}")
                     time.sleep(0.01)
                     continue
+
+                # Apply source boost to compensate for lowered source volume
+                boost = self._source_boost
+                if boost > 1.01:
+                    audio = np.frombuffer(data, dtype=self.NUMPY_DTYPE).copy()
+                    audio = (audio * boost).clip(-32768, 32767).astype(self.NUMPY_DTYPE)
+                    data = audio.tobytes()
 
                 # Distribute to all output queues
                 for q in queues:
