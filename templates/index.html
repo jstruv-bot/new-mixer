@@ -1478,11 +1478,76 @@
         ctx.globalAlpha = 1.0;
     }
     function drawFsWaveformTerrain(w, h, cx, cy, theme) {
-        ctx.fillStyle = theme.primary;
-        ctx.globalAlpha = 0.3;
-        ctx.font = '24px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Waveform Terrain', cx, cy);
+        const spectrum = state.vizSpectrum;
+        const energy = state.djEnergy || 0;
+        const lines = state.vizTerrainLines;
+        const maxLines = 40;
+        const pointCount = 128;
+
+        // Generate new line from current spectrum/energy
+        const newLine = new Float32Array(pointCount);
+        for (let i = 0; i < pointCount; i++) {
+            const t = i / (pointCount - 1);
+            // Map position to spectrum bands for displacement
+            const bandIdx = Math.floor(t * 7.99);
+            const bandAmp = spectrum[bandIdx] || 0;
+            // Gaussian-like envelope: strongest in center
+            const envelope = Math.exp(-((t - 0.5) * (t - 0.5)) * 8);
+            // Base displacement from energy + spectrum
+            let displacement = (energy * 0.3 + bandAmp * 0.7) * envelope;
+            // Add some noise for organic feel
+            displacement += (Math.random() - 0.5) * 0.05 * energy;
+            // Beat peak injection
+            if (state.vizBeat) {
+                const beatEnv = Math.exp(-((t - 0.5) * (t - 0.5)) * 20);
+                displacement += beatEnv * 0.5;
+            }
+            newLine[i] = displacement;
+        }
+
+        // Push new line and trim history
+        lines.push(newLine);
+        while (lines.length > maxLines) lines.shift();
+
+        // Draw lines from back (oldest/top) to front (newest/bottom)
+        const lineSpacing = h / (maxLines + 2);
+        const margin = w * 0.1;
+        const drawWidth = w - margin * 2;
+
+        for (let li = 0; li < lines.length; li++) {
+            const line = lines[li];
+            const progress = li / (lines.length - 1 || 1);  // 0=oldest, 1=newest
+            const baseY = h * 0.15 + li * lineSpacing;
+
+            // Color: warm (newest/bottom) to cool (oldest/top)
+            const r = Math.floor(255 * progress);
+            const g = Math.floor(120 * (1 - progress) + 80 * progress);
+            const b = Math.floor(255 * (1 - progress));
+            const alpha = 0.3 + progress * 0.7;
+
+            ctx.beginPath();
+            for (let i = 0; i < pointCount; i++) {
+                const x = margin + (i / (pointCount - 1)) * drawWidth;
+                const displacement = line[i] * lineSpacing * 3;
+                const y = baseY - displacement;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+
+            ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.globalAlpha = alpha;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Fill below the line (creates depth/occlusion effect)
+            ctx.lineTo(margin + drawWidth, baseY + lineSpacing);
+            ctx.lineTo(margin, baseY + lineSpacing);
+            ctx.closePath();
+            ctx.fillStyle = theme.background;
+            ctx.globalAlpha = alpha * 0.8;
+            ctx.fill();
+        }
+
         ctx.globalAlpha = 1.0;
     }
     function drawFsKaleidoscope(w, h, cx, cy, theme) {
