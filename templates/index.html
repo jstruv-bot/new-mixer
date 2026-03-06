@@ -344,6 +344,11 @@
             <input type="range" id="eq-minvol" min="0" max="100" value="0" step="1">
             <span id="eq-minvol-val">0%</span>
         </div>
+        <div class="eq-slider-row">
+            <label>Delay</label>
+            <input type="range" id="eq-delay" min="0" max="500" value="0" step="5">
+            <span id="eq-delay-val">0ms</span>
+        </div>
     </div>
 
     <div id="group-panel" class="group-panel" style="display:none;">
@@ -1550,6 +1555,8 @@
     const eqTrebleVal = document.getElementById('eq-treble-val');
     const eqMinVol = document.getElementById('eq-minvol');
     const eqMinVolVal = document.getElementById('eq-minvol-val');
+    const eqDelay = document.getElementById('eq-delay');
+    const eqDelayVal = document.getElementById('eq-delay-val');
     const eqDeviceName = document.getElementById('eq-device-name');
     const eqClose = document.getElementById('eq-close');
 
@@ -1557,7 +1564,7 @@
         const dev = state.deviceMap.get(deviceId);
         if (!dev) return;
         state.eqTarget = deviceId;
-        eqDeviceName.textContent = 'EQ: ' + dev.name;
+        eqDeviceName.textContent = dev.name;
         const eq = dev.eq || { bass: 0, treble: 0 };
         eqBass.value = Math.round(eq.bass * 100);
         eqTreble.value = Math.round(eq.treble * 100);
@@ -1566,6 +1573,9 @@
         const mv = Math.round((state.minVolumes[deviceId] || 0) * 100);
         eqMinVol.value = mv;
         eqMinVolVal.textContent = mv + '%';
+        const dly = dev.delay_ms || 0;
+        eqDelay.value = dly;
+        eqDelayVal.textContent = dly + 'ms';
         eqPanel.style.display = 'block';
     }
 
@@ -1599,6 +1609,13 @@
         localStorage.setItem('mixer-minvols', JSON.stringify(state.minVolumes));
         socket.emit('set_min_volume', { device_id: state.eqTarget, min_volume: val });
         updateVolumes();
+    });
+
+    eqDelay.addEventListener('input', () => {
+        const ms = parseInt(eqDelay.value);
+        eqDelayVal.textContent = ms + 'ms';
+        if (!state.eqTarget) return;
+        socket.emit('set_delay', { device_id: state.eqTarget, delay_ms: ms });
     });
 
     canvas.addEventListener('dblclick', (e) => {

@@ -999,6 +999,7 @@ def _enrich_devices(devices):
             d2["zone"] = _zone_positions.get(did, None)
             d2["cue"] = did in _cue_members
             d2["min_volume"] = _min_volumes.get(did, 0.0)
+            d2["delay_ms"] = audio_router._delay_ms.get(did, 0)
             enriched.append(d2)
         return enriched
 
