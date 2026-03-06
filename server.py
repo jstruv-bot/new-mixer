@@ -262,6 +262,13 @@ class AudioRouter:
         self._stereo_sep = 0.0          # global stereo separation (0=mono, 1=full split)
         self._spectrum_bands = [0.0] * 8  # 8 log-spaced frequency bands from FFT
         self._spectrum_chunk_counter = 0  # compute FFT every 3rd chunk (~16Hz)
+        self._beat_detected = False      # True on the frame a beat is detected
+        self._beat_bpm = 0.0             # estimated BPM (median of recent intervals)
+        self._beat_phase = 0.0           # 0-1 sawtooth synced to tempo
+        self._beat_energy_history = collections.deque(maxlen=30)  # rolling energy window
+        self._beat_timestamps = collections.deque(maxlen=16)      # recent beat times for BPM
+        self._beat_cooldown = 0          # frames to wait before next beat
+        self._beat_last_time = 0.0       # time.monotonic() of last beat
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -565,6 +572,51 @@ class AudioRouter:
         bands = [min(1.0, b / max_val) for b in bands]
         return bands
 
+    @property
+    def beat_detected(self):
+        return self._beat_detected
+
+    @property
+    def beat_bpm(self):
+        return self._beat_bpm
+
+    @property
+    def beat_phase(self):
+        return self._beat_phase
+
+    def _check_beat(self, energy):
+        """Check if current energy frame is a beat onset."""
+        self._beat_energy_history.append(energy)
+
+        if self._beat_cooldown > 0:
+            self._beat_cooldown -= 1
+            return False
+
+        if len(self._beat_energy_history) < 10:
+            return False
+
+        avg = sum(self._beat_energy_history) / len(self._beat_energy_history)
+        threshold = avg * 1.5 + 0.05  # 1.5x average + floor
+
+        if energy > threshold:
+            self._beat_cooldown = 4  # ~250ms cooldown at 16Hz
+            now = time.monotonic()
+
+            # Track beat timestamps for BPM estimation
+            self._beat_timestamps.append(now)
+            if len(self._beat_timestamps) >= 4:
+                intervals = [self._beat_timestamps[i] - self._beat_timestamps[i - 1]
+                             for i in range(1, len(self._beat_timestamps))]
+                # Median filter for stability
+                intervals.sort()
+                median_interval = intervals[len(intervals) // 2]
+                if median_interval > 0.2:  # cap at 300 BPM
+                    self._beat_bpm = round(60.0 / median_interval, 1)
+
+            self._beat_last_time = now
+            return True
+        return False
+
     @staticmethod
     def _compute_biquad_low_shelf(freq, sample_rate, gain_db):
         """Compute biquad low-shelf filter coefficients."""
@@ -781,6 +833,19 @@ class AudioRouter:
                 if self._spectrum_chunk_counter >= 3:
                     self._spectrum_chunk_counter = 0
                     self._spectrum_bands = self.compute_fft_bands(samples, self._sample_rate)
+
+                # Beat detection (runs alongside FFT)
+                if self._spectrum_chunk_counter == 0:  # same cadence as FFT
+                    self._beat_detected = self._check_beat(rms)
+                    # Update phase sawtooth
+                    if self._beat_bpm > 0:
+                        beat_period = 60.0 / self._beat_bpm
+                        elapsed = time.monotonic() - self._beat_last_time
+                        self._beat_phase = (elapsed / beat_period) % 1.0
+                    else:
+                        self._beat_phase = 0.0
+                else:
+                    self._beat_detected = False
 
                 # Distribute to all output queues
                 for q in queues:

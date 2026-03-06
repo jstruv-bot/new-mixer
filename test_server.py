@@ -768,3 +768,38 @@ class TestFFTSpectrum:
         # Band 1 (bass: 60-250Hz) should have the most energy
         assert bands[1] > 0.1
         assert bands[1] > bands[5]  # bass > presence
+
+
+class TestBeatDetection:
+    """Beat detection tests."""
+
+    def test_beat_state_defaults(self):
+        assert server_module.audio_router.beat_detected is False
+        assert server_module.audio_router.beat_bpm == 0.0
+        assert server_module.audio_router.beat_phase == 0.0
+
+    def test_detect_beat_on_spike(self):
+        """Energy spike above rolling average should trigger beat."""
+        router = server_module.audio_router
+        # Fill rolling average with low energy
+        router._beat_energy_history = collections.deque([0.1] * 30, maxlen=30)
+        router._beat_cooldown = 0
+        # A spike well above the average should be a beat
+        is_beat = router._check_beat(0.5)
+        assert is_beat is True
+
+    def test_no_beat_on_steady(self):
+        """Steady energy should NOT trigger beats."""
+        router = server_module.audio_router
+        router._beat_energy_history = collections.deque([0.3] * 30, maxlen=30)
+        router._beat_cooldown = 0
+        is_beat = router._check_beat(0.32)
+        assert is_beat is False
+
+    def test_beat_cooldown_prevents_rapid_fire(self):
+        """Beats should not fire more than ~10Hz."""
+        router = server_module.audio_router
+        router._beat_energy_history = collections.deque([0.1] * 30, maxlen=30)
+        router._beat_cooldown = 5  # Still in cooldown
+        is_beat = router._check_beat(0.5)
+        assert is_beat is False
