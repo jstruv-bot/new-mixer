@@ -712,7 +712,7 @@ _level_decay = 0.85
 # ---------------------------------------------------------------------------
 
 SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '')
-SPOTIFY_REDIRECT_URI = 'http://localhost:5000/spotify/callback'
+SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:5000/spotify/callback'
 SPOTIFY_SCOPES = 'user-read-currently-playing user-modify-playback-state'
 
 _spotify_lock = threading.Lock()
@@ -950,12 +950,76 @@ def api_router_status():
 # ---------------------------------------------------------------------------
 
 
+@app.route('/spotify/setup')
+def spotify_setup():
+    """Show Spotify Client ID setup page."""
+    return '''<!DOCTYPE html>
+<html><head><title>Spotify Setup</title>
+<style>
+body{font-family:system-ui;background:#0f0f23;color:#e0e0e0;display:flex;
+justify-content:center;align-items:center;min-height:100vh;margin:0}
+.box{background:#1a1a2e;border:1px solid #333;border-radius:12px;padding:2rem;
+max-width:480px;width:90%}
+h2{color:#00d4ff;margin-top:0}
+input{width:100%;padding:0.6rem;border:1px solid #444;border-radius:6px;
+background:#0f0f23;color:#e0e0e0;font-size:1rem;box-sizing:border-box;margin:0.5rem 0}
+button{background:#00d4ff;color:#0f0f23;border:none;padding:0.6rem 1.5rem;
+border-radius:6px;font-size:1rem;cursor:pointer;font-weight:bold;margin-top:0.5rem}
+button:hover{background:#00b8d4}
+a{color:#00d4ff}
+ol{padding-left:1.2rem;line-height:1.8}
+code{background:#0f0f23;padding:2px 6px;border-radius:3px;font-size:0.9em}
+.err{color:#ff6b6b;margin-top:0.5rem;display:none}
+.ok{color:#4caf50;margin-top:0.5rem;display:none}
+</style></head><body>
+<div class="box">
+<h2>Spotify Setup</h2>
+<p>To use Spotify integration, you need a free Spotify Developer app:</p>
+<ol>
+<li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank">developer.spotify.com/dashboard</a></li>
+<li>Create a new app (any name)</li>
+<li>Add redirect URI: <code>http://127.0.0.1:5000/spotify/callback</code></li>
+<li>Copy the <strong>Client ID</strong> and paste below</li>
+</ol>
+<input id="cid" type="text" placeholder="Paste your Spotify Client ID here" spellcheck="false">
+<button onclick="save()">Save & Connect</button>
+<div class="err" id="err"></div>
+<div class="ok" id="ok"></div>
+<script>
+async function save(){
+  const cid=document.getElementById('cid').value.trim();
+  if(!cid){document.getElementById('err').style.display='block';
+    document.getElementById('err').textContent='Please enter a Client ID';return}
+  const r=await fetch('/api/spotify/client-id',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:cid})});
+  if(r.ok){document.getElementById('ok').style.display='block';
+    document.getElementById('ok').textContent='Saved! Redirecting to Spotify login...';
+    document.getElementById('err').style.display='none';
+    setTimeout(()=>window.location.href='/spotify/login',1000)}
+  else{document.getElementById('err').style.display='block';
+    document.getElementById('err').textContent='Failed to save';
+    document.getElementById('ok').style.display='none'}}
+</script></div></body></html>'''
+
+
+@app.route('/api/spotify/client-id', methods=['POST'])
+def set_spotify_client_id():
+    """Set the Spotify Client ID at runtime."""
+    global SPOTIFY_CLIENT_ID
+    data = request.get_json(silent=True) or {}
+    client_id = data.get('client_id', '').strip()
+    if not client_id:
+        return jsonify({'error': 'client_id required'}), 400
+    SPOTIFY_CLIENT_ID = client_id
+    return jsonify({'success': True})
+
+
 @app.route('/spotify/login')
 def spotify_login():
     """Redirect to Spotify authorization."""
     global _spotify_code_verifier
     if not SPOTIFY_CLIENT_ID:
-        return 'Set SPOTIFY_CLIENT_ID environment variable', 500
+        return redirect('/spotify/setup')
     _spotify_code_verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(
         hashlib.sha256(_spotify_code_verifier.encode()).digest()

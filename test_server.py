@@ -452,7 +452,8 @@ class TestSpotify:
     def test_spotify_login_no_client_id(self, client):
         server_module.SPOTIFY_CLIENT_ID = ''
         resp = client.get('/spotify/login')
-        assert resp.status_code == 500
+        assert resp.status_code == 302
+        assert '/spotify/setup' in resp.headers['Location']
 
     def test_spotify_callback_error_xss_safe(self, client):
         resp = client.get('/spotify/callback?error=<script>alert(1)</script>')
