@@ -735,3 +735,36 @@ class TestSpatialAudio:
         enriched = server_module._enrich_devices(devices)
         assert enriched[0]['pan'] == -0.5
         server_module.audio_router._pan.pop('d1', None)
+
+
+class TestFFTSpectrum:
+    """FFT spectrum analysis tests."""
+
+    def test_spectrum_bands_default_empty(self):
+        assert server_module.audio_router.spectrum_bands == [0.0] * 8
+
+    def test_spectrum_bands_length(self):
+        # Simulate setting bands
+        server_module.audio_router._spectrum_bands = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+        assert len(server_module.audio_router.spectrum_bands) == 8
+        server_module.audio_router._spectrum_bands = [0.0] * 8
+
+    def test_compute_spectrum_from_silence(self):
+        """FFT of silence should produce all-zero bands."""
+        import numpy as np
+        silence = np.zeros(1024, dtype=np.float32)
+        bands = server_module.AudioRouter.compute_fft_bands(silence, 48000)
+        assert len(bands) == 8
+        assert all(b == 0.0 for b in bands)
+
+    def test_compute_spectrum_from_tone(self):
+        """A 100Hz sine wave should produce energy in the bass band."""
+        import numpy as np
+        sr = 48000
+        t = np.arange(1024, dtype=np.float32) / sr
+        tone = (np.sin(2 * np.pi * 100 * t) * 0.5).astype(np.float32)
+        bands = server_module.AudioRouter.compute_fft_bands(tone, sr)
+        assert len(bands) == 8
+        # Band 1 (bass: 60-250Hz) should have the most energy
+        assert bands[1] > 0.1
+        assert bands[1] > bands[5]  # bass > presence

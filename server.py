@@ -260,6 +260,8 @@ class AudioRouter:
         self._energy_level = 0.0        # real-time RMS energy (0.0-1.0), updated by capture thread
         self._pan = {}                  # device_id -> float (-1.0 left .. +1.0 right)
         self._stereo_sep = 0.0          # global stereo separation (0=mono, 1=full split)
+        self._spectrum_bands = [0.0] * 8  # 8 log-spaced frequency bands from FFT
+        self._spectrum_chunk_counter = 0  # compute FFT every 3rd chunk (~16Hz)
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -381,6 +383,9 @@ class AudioRouter:
         with _state_lock:
             max_vol = _max_volumes.get(device_id)
         if max_vol is not None and max_vol > 0:
+            if vol > max_vol:
+                print(f"[AudioRouter] Volume capped: {device_id} "
+                      f"{vol:.2f} → {max_vol:.2f} (max lock)")
             vol = min(vol, max_vol)
         with self._lock:
             self._volumes[device_id] = vol
@@ -519,6 +524,46 @@ class AudioRouter:
     def energy_level(self):
         """Current audio energy level (0.0-1.0), updated by capture thread."""
         return self._energy_level
+
+    @property
+    def spectrum_bands(self):
+        """Current 8-band FFT spectrum (0.0-1.0 per band)."""
+        return list(self._spectrum_bands)
+
+    @staticmethod
+    def compute_fft_bands(samples, sample_rate):
+        """Compute 8 log-spaced frequency bands from audio samples.
+
+        Bands: sub-bass(20-60Hz), bass(60-250Hz), low-mid(250-500Hz),
+               mid(500-2kHz), upper-mid(2-4kHz), presence(4-6kHz),
+               brilliance(6-12kHz), air(12-20kHz)
+        """
+        n = len(samples)
+        if n == 0 or np.max(np.abs(samples)) < 1e-6:
+            return [0.0] * 8
+
+        # Hann window to reduce spectral leakage
+        window = np.hanning(n)
+        windowed = samples * window
+
+        # Real FFT
+        fft_mag = np.abs(np.fft.rfft(windowed)) / n
+        freqs = np.fft.rfftfreq(n, 1.0 / sample_rate)
+
+        # Band edges in Hz (log-spaced to match human hearing)
+        edges = [20, 60, 250, 500, 2000, 4000, 6000, 12000, 20000]
+        bands = []
+        for i in range(8):
+            mask = (freqs >= edges[i]) & (freqs < edges[i + 1])
+            if np.any(mask):
+                bands.append(float(np.mean(fft_mag[mask])))
+            else:
+                bands.append(0.0)
+
+        # Normalize: scale so typical music fills 0-1 range
+        max_val = max(bands) if max(bands) > 0 else 1.0
+        bands = [min(1.0, b / max_val) for b in bands]
+        return bands
 
     @staticmethod
     def _compute_biquad_low_shelf(freq, sample_rate, gain_db):
@@ -731,6 +776,12 @@ class AudioRouter:
                 # EMA smoothing (alpha=0.3 balances responsiveness vs stability)
                 self._energy_level = 0.3 * rms + 0.7 * self._energy_level
 
+                # FFT spectrum (every 3rd chunk ≈ 16Hz at 48kHz/1024)
+                self._spectrum_chunk_counter += 1
+                if self._spectrum_chunk_counter >= 3:
+                    self._spectrum_chunk_counter = 0
+                    self._spectrum_bands = self.compute_fft_bands(samples, self._sample_rate)
+
                 # Distribute to all output queues
                 for q in queues:
                     try:
@@ -761,33 +812,38 @@ class AudioRouter:
             out_rate = self._sample_rate
             needs_resample = False
 
-            try:
-                stream = self._pa.open(
-                    format=self.FORMAT,
-                    channels=out_channels,
-                    rate=out_rate,
-                    output=True,
-                    output_device_index=pa_device_index,
-                    frames_per_buffer=self.CHUNK,
-                )
-            except Exception:
-                # Device may not support capture sample rate — try native rate
-                native_rate = int(pa_info.get("defaultSampleRate", 44100))
-                if native_rate != out_rate:
-                    print(f"[AudioRouter] Retrying output {pa_device_index} "
-                          f"at native {native_rate}Hz (capture is {out_rate}Hz)")
-                    out_rate = native_rate
-                    needs_resample = True
-                    stream = self._pa.open(
-                        format=self.FORMAT,
-                        channels=out_channels,
-                        rate=out_rate,
-                        output=True,
+            _MAX_REOPEN = 5           # max stream recovery attempts
+            _REOPEN_BASE_DELAY = 0.5  # seconds (doubles each retry)
+            _ERR_THRESHOLD = 3        # consecutive errors before recovery
+
+            def _open_stream():
+                """Open a PortAudio output stream (tries native rate on failure)."""
+                nonlocal out_rate, needs_resample
+                try:
+                    s = self._pa.open(
+                        format=self.FORMAT, channels=out_channels,
+                        rate=out_rate, output=True,
                         output_device_index=pa_device_index,
                         frames_per_buffer=self.CHUNK,
                     )
-                else:
+                    return s
+                except Exception:
+                    native_rate = int(pa_info.get("defaultSampleRate", 44100))
+                    if native_rate != self._sample_rate:
+                        print(f"[AudioRouter] Retrying output {pa_device_index} "
+                              f"at native {native_rate}Hz (capture is "
+                              f"{self._sample_rate}Hz)")
+                        out_rate = native_rate
+                        needs_resample = True
+                        return self._pa.open(
+                            format=self.FORMAT, channels=out_channels,
+                            rate=out_rate, output=True,
+                            output_device_index=pa_device_index,
+                            frames_per_buffer=self.CHUNK,
+                        )
                     raise
+
+            stream = _open_stream()
 
             self._output_streams[device_id] = stream
         except Exception as exc:
@@ -801,6 +857,8 @@ class AudioRouter:
         q = self._audio_queues.get(device_id)
         if not q:
             return
+
+        consecutive_errors = 0
 
         try:
             while self._running:
@@ -827,8 +885,9 @@ class AudioRouter:
                     # Muted — write silence to keep stream alive
                     try:
                         stream.write(b'\x00' * len(data))
+                        consecutive_errors = 0
                     except Exception:
-                        pass
+                        consecutive_errors += 1
                     continue
 
                 # Convert to numpy, apply volume, clip
@@ -912,11 +971,50 @@ class AudioRouter:
                 _t0 = time.perf_counter()
                 try:
                     stream.write(audio.tobytes())
+                    consecutive_errors = 0
                 except Exception as exc:
-                    if self._running:
-                        print(f"[AudioRouter] Output write error: {exc}")
-                    time.sleep(0.01)
+                    consecutive_errors += 1
+                    if consecutive_errors == 1:
+                        print(f"[AudioRouter] Output write error for "
+                              f"'{dev_name}': {exc}")
+
+                    # After several consecutive failures, try to reopen stream
+                    if consecutive_errors >= _ERR_THRESHOLD:
+                        print(f"[AudioRouter] Stream dead for '{dev_name}' "
+                              f"({consecutive_errors} errors), recovering...")
+                        try:
+                            stream.stop_stream()
+                            stream.close()
+                        except Exception:
+                            pass
+
+                        recovered = False
+                        for attempt in range(1, _MAX_REOPEN + 1):
+                            if not self._running:
+                                break
+                            delay = _REOPEN_BASE_DELAY * (2 ** (attempt - 1))
+                            time.sleep(delay)
+                            try:
+                                stream = _open_stream()
+                                self._output_streams[device_id] = stream
+                                consecutive_errors = 0
+                                recovered = True
+                                print(f"[AudioRouter] Stream recovered for "
+                                      f"'{dev_name}' (attempt {attempt})")
+                                break
+                            except Exception as re_exc:
+                                print(f"[AudioRouter] Reopen attempt "
+                                      f"{attempt}/{_MAX_REOPEN} failed for "
+                                      f"'{dev_name}': {re_exc}")
+
+                        if not recovered:
+                            print(f"[AudioRouter] Giving up on '{dev_name}' "
+                                  f"after {_MAX_REOPEN} reopen attempts")
+                            break  # exit worker loop
+                    else:
+                        time.sleep(0.01)
                     continue
+
                 _t1 = time.perf_counter()
                 with self._lock:
                     self._latency[device_id] = round((_t1 - _t0) * 1000, 1)
