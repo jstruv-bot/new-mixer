@@ -1129,6 +1129,22 @@ def spotify_previous():
     return _spotify_playback_action('previous', method='POST')
 
 
+@app.route('/api/spotify/seek', methods=['POST'])
+def spotify_seek():
+    """Seek to a position in the current track."""
+    token = _get_spotify_token()
+    if not token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    data = request.get_json(silent=True) or {}
+    position_ms = data.get('position_ms', 0)
+    position_ms = max(0, int(position_ms))
+    http_requests.put(
+        f'https://api.spotify.com/v1/me/player/seek?position_ms={position_ms}',
+        headers={'Authorization': f'Bearer {token}'}, timeout=5
+    )
+    return jsonify({'success': True})
+
+
 def _get_spotify_token():
     """Get valid Spotify access token, refreshing if needed."""
     global _spotify_token

@@ -198,8 +198,13 @@
         .spotify-info { flex: 1; min-width: 0; }
         .spotify-track { font-size: 0.85rem; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .spotify-artist { font-size: 0.75rem; color: #8888aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .spotify-progress { height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 4px; }
-        .spotify-bar-fill { height: 100%; background: #1ed760; border-radius: 2px; transition: width 1s linear; width: 0%; }
+        .spotify-progress { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 6px; cursor: pointer; position: relative; }
+        .spotify-progress:hover { height: 8px; }
+        .spotify-bar-fill { height: 100%; background: #1ed760; border-radius: 3px; width: 0%; pointer-events: none; transition: none; }
+        .spotify-progress:hover .spotify-bar-fill::after {
+            content: ''; position: absolute; right: -5px; top: 50%; transform: translateY(-50%);
+            width: 12px; height: 12px; background: #fff; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.4);
+        }
         .spotify-controls { display: flex; gap: 0.3rem; }
         .spotify-controls button {
             background: rgba(30, 215, 96, 0.12); color: #1ed760;
@@ -474,13 +479,50 @@
     });
 
     // Progress bar interpolation
+    let _seekDragging = false;
     setInterval(() => {
-        if (!spotifyPlaying || !spotifyDurationMs) return;
+        if (_seekDragging || !spotifyPlaying || !spotifyDurationMs) return;
         const elapsed = Date.now() - spotifyLastUpdate;
         const current = spotifyProgressMs + elapsed;
         const pct = Math.min(100, (current / spotifyDurationMs) * 100);
         spotifyEls.bar.style.width = pct + '%';
-    }, 1000);
+    }, 250);
+
+    // Seek bar interaction (click + drag)
+    const progressBar = spotifyEls.bar.parentElement;
+
+    function seekFromEvent(e) {
+        const rect = progressBar.getBoundingClientRect();
+        const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+        const pct = x / rect.width;
+        spotifyEls.bar.style.width = (pct * 100) + '%';
+        return Math.round(pct * spotifyDurationMs);
+    }
+
+    progressBar.addEventListener('mousedown', (e) => {
+        if (!spotifyDurationMs) return;
+        _seekDragging = true;
+        seekFromEvent(e);
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!_seekDragging) return;
+        seekFromEvent(e);
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        if (!_seekDragging) return;
+        _seekDragging = false;
+        const posMs = seekFromEvent(e);
+        spotifyProgressMs = posMs;
+        spotifyLastUpdate = Date.now();
+        fetch('/api/spotify/seek', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ position_ms: posMs })
+        });
+    });
 
     // Spotify connect button
     document.getElementById('btn-spotify').addEventListener('click', () => {
