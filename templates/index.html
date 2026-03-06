@@ -145,22 +145,6 @@
         .eq-slider-row input[type=range] { flex: 1; accent-color: #00d4ff; }
         .eq-slider-row span { min-width: 30px; text-align: right; font-size: 0.8rem; color: #c0c0d8; }
 
-        /* ── Group Panel ────────────────────────────────────────── */
-        .group-panel {
-            margin-top: 1rem;
-            background: rgba(0, 212, 255, 0.06);
-            border: 1px solid rgba(0, 212, 255, 0.2);
-            border-radius: 8px;
-            padding: 1rem;
-            width: 300px;
-        }
-        .group-create { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
-        .group-create input {
-            flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(0,212,255,0.3);
-            color: #e0e0e0; padding: 0.4rem; border-radius: 4px; font-size: 0.85rem;
-        }
-        .group-hint { font-size: 0.8rem; color: #8888aa; margin-top: 0.5rem; }
-
         /* ── Preset Bar ──────────────────────────────────────── */
         .preset-bar {
             margin-top: 0.8rem;
@@ -313,7 +297,6 @@
             <span id="stereo-sep-val" style="min-width:28px;">0%</span>
         </span>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
-        <button id="btn-groups" type="button">Groups</button>
         <button id="btn-dj" type="button" title="DJ features menu">DJ</button>
         <button id="btn-refresh" type="button">Refresh Devices</button>
     </div>
@@ -360,19 +343,6 @@
             <input type="range" id="eq-pan" min="-100" max="100" value="0" step="1">
             <span id="eq-pan-val">C</span>
         </div>
-    </div>
-
-    <div id="group-panel" class="group-panel" style="display:none;">
-        <div class="eq-header">
-            <span>Device Groups</span>
-            <button id="group-close" type="button">&times;</button>
-        </div>
-        <div id="group-list"></div>
-        <div class="group-create">
-            <input type="text" id="group-name-input" placeholder="Group name" maxlength="20">
-            <button id="group-create-btn" type="button">Create Group</button>
-        </div>
-        <p class="group-hint" id="group-hint" style="display:none;">Click speakers on canvas to add/remove from group</p>
     </div>
 
     <div id="spotify-widget" class="spotify-widget" style="display:none;">
@@ -553,9 +523,6 @@
         minVolumes:     JSON.parse(localStorage.getItem('mixer-minvols') || '{}'),  // device_id -> 0-1
         mutedDevices:   new Set(),  // legacy: kept for preset compatibility
         eqTarget:       null,    // device_id of currently open EQ panel
-        groups:         {},      // group_id -> {name, deviceIds: Set, color}
-        groupMembership: {},     // device_id -> group_id
-        editingGroup:   null,    // group_id being edited (click-to-add mode)
         restoredDevice: null,    // {id, until} for restore flash animation
         presets:        JSON.parse(localStorage.getItem('mixer-presets') || 'null') || new Array(9).fill(null),
         activePreset:   -1,
@@ -594,18 +561,6 @@
         state.deviceMap.clear();
         for (const d of state.devices) state.deviceMap.set(d.id, d);
     }
-    const GROUP_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff8e53', '#c77dff', '#45f0df', '#f97068'];
-    let nextGroupColor = 0;
-
-    // Load persisted groups from localStorage
-    try {
-        const saved = JSON.parse(localStorage.getItem('mixer-groups') || '{}');
-        for (const [gid, g] of Object.entries(saved)) {
-            state.groups[gid] = { name: g.name, deviceIds: new Set(g.deviceIds), color: g.color };
-            for (const did of g.deviceIds) state.groupMembership[did] = gid;
-        }
-    } catch(e) {}
-
     // ── WebSocket connection ──────────────────────────────────────────
 
     const socket = io();
@@ -1157,30 +1112,6 @@
             return;                             // nothing else to draw
         }
 
-        // Draw group arcs
-        for (const [gid, group] of Object.entries(state.groups)) {
-            const memberIndices = [];
-            for (let i = 0; i < n; i++) {
-                if (group.deviceIds.has(state.devices[i].id)) memberIndices.push(i);
-            }
-            if (memberIndices.length < 2) continue;
-            // Draw arc on the ring connecting group members
-            const angles = memberIndices.map(i => (i / n) * 2 * Math.PI - Math.PI / 2).sort((a, b) => a - b);
-            ctx.beginPath();
-            ctx.arc(CENTER, CENTER, RING_RADIUS + 14, angles[0], angles[angles.length - 1]);
-            ctx.strokeStyle = group.color + '55';
-            ctx.lineWidth = 4;
-            ctx.stroke();
-            // Small colored dot on grouped devices
-            for (const idx of memberIndices) {
-                const pos = devicePosition(idx, n);
-                ctx.beginPath();
-                ctx.arc(pos.x + DEVICE_RADIUS - 2, pos.y - DEVICE_RADIUS + 2, 4, 0, Math.PI * 2);
-                ctx.fillStyle = group.color;
-                ctx.fill();
-            }
-        }
-
         // 3. Draw devices
         for (let i = 0; i < n; i++) {
             const pos    = devicePosition(i, n);
@@ -1493,38 +1424,6 @@
         const p  = canvasCoords(e);
         const n  = state.devices.length;
 
-        // If editing a group, toggle device membership on click
-        if (state.editingGroup) {
-            for (let i = 0; i < n; i++) {
-                const pos = devicePosition(i, n);
-                const dx = p.x - pos.x;
-                const dy = p.y - pos.y;
-                if (dx * dx + dy * dy < DEVICE_RADIUS2) {
-                    const did = state.devices[i].id;
-                    const gid = state.editingGroup;
-                    const group = state.groups[gid];
-                    if (group) {
-                        if (group.deviceIds.has(did)) {
-                            group.deviceIds.delete(did);
-                        } else {
-                            // Remove from any other group first
-                            for (const [otherGid, otherGroup] of Object.entries(state.groups)) {
-                                if (otherGid !== gid && otherGroup.deviceIds.has(did)) {
-                                    otherGroup.deviceIds.delete(did);
-                                    syncGroupToServer(otherGid);
-                                }
-                            }
-                            group.deviceIds.add(did);
-                        }
-                        syncGroupToServer(gid);
-                        renderGroupList();
-                    }
-                    e.preventDefault();
-                    return;
-                }
-            }
-        }
-
         // Zone mode: drag devices to reposition them
         if (state.zoneMode) {
             for (let i = 0; i < n; i++) {
@@ -1729,110 +1628,6 @@
         }
     });
 
-    // ── Group Panel ─────────────────────────────────────────────────────
-
-    function syncGroupToServer(gid) {
-        const g = state.groups[gid];
-        if (!g) return;
-        socket.emit('set_group', { group_id: gid, name: g.name, device_ids: [...g.deviceIds] });
-        // Rebuild membership
-        state.groupMembership = {};
-        for (const [id, group] of Object.entries(state.groups)) {
-            for (const did of group.deviceIds) state.groupMembership[did] = id;
-        }
-        persistGroups();
-    }
-
-    function persistGroups() {
-        localStorage.setItem('mixer-groups', JSON.stringify(
-            Object.fromEntries(Object.entries(state.groups).map(([k,v]) =>
-                [k, {name: v.name, deviceIds: [...v.deviceIds], color: v.color}]))
-        ));
-    }
-
-    function renderGroupList() {
-        const list = document.getElementById('group-list');
-        list.innerHTML = '';
-        for (const [gid, g] of Object.entries(state.groups)) {
-            const div = document.createElement('div');
-            div.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;';
-            const isEditing = state.editingGroup === gid;
-            // Build with DOM APIs to avoid innerHTML XSS
-            const dot = document.createElement('span');
-            dot.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + g.color;
-            const label = document.createElement('span');
-            label.style.cssText = 'flex:1;font-size:0.85rem;color:#c0c0d8;';
-            label.textContent = g.name + ' (' + g.deviceIds.size + ')';
-            const editBtn = document.createElement('button');
-            editBtn.dataset.gid = gid;
-            editBtn.className = 'group-edit-btn';
-            editBtn.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;' + (isEditing ? 'color:#00d4ff;border-color:#00d4ff;' : '');
-            editBtn.textContent = isEditing ? 'Done' : 'Edit';
-            const delBtn = document.createElement('button');
-            delBtn.dataset.gid = gid;
-            delBtn.className = 'group-del-btn';
-            delBtn.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;color:#ff6b6b;border-color:#ff6b6b;';
-            delBtn.textContent = 'Del';
-            div.append(dot, label, editBtn, delBtn);
-            list.appendChild(div);
-        }
-        list.querySelectorAll('.group-edit-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (state.editingGroup === btn.dataset.gid) {
-                    state.editingGroup = null;
-                    document.getElementById('group-hint').style.display = 'none';
-                } else {
-                    state.editingGroup = btn.dataset.gid;
-                    document.getElementById('group-hint').style.display = 'block';
-                }
-                renderGroupList();
-            });
-        });
-        list.querySelectorAll('.group-del-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const gid = btn.dataset.gid;
-                socket.emit('delete_group', { group_id: gid });
-                const group = state.groups[gid];
-                if (group) {
-                    for (const did of group.deviceIds) {
-                        if (state.groupMembership[did] === gid) delete state.groupMembership[did];
-                    }
-                }
-                delete state.groups[gid];
-                if (state.editingGroup === gid) state.editingGroup = null;
-                renderGroupList();
-                persistGroups();
-            });
-        });
-    }
-
-    document.getElementById('btn-groups').addEventListener('click', () => {
-        const panel = document.getElementById('group-panel');
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-        state.editingGroup = null;
-        document.getElementById('group-hint').style.display = 'none';
-        renderGroupList();
-    });
-
-    document.getElementById('group-close').addEventListener('click', () => {
-        document.getElementById('group-panel').style.display = 'none';
-        state.editingGroup = null;
-    });
-
-    document.getElementById('group-create-btn').addEventListener('click', () => {
-        const input = document.getElementById('group-name-input');
-        const name = input.value.trim();
-        if (!name) return;
-        const gid = 'g_' + Date.now();
-        state.groups[gid] = { name, deviceIds: new Set(), color: GROUP_COLORS[nextGroupColor % GROUP_COLORS.length] };
-        nextGroupColor++;
-        state.editingGroup = gid;
-        document.getElementById('group-hint').style.display = 'block';
-        input.value = '';
-        renderGroupList();
-        syncGroupToServer(gid);
-    });
-
     // ── Preset System ──────────────────────────────────────────────────
 
     function renderPresetSlots() {
@@ -1976,8 +1771,6 @@
                 break;
             case 'Escape':
                 closeEQPanel();
-                document.getElementById('group-panel').style.display = 'none';
-                state.editingGroup = null;
                 state.focusedElement = null;
                 e.preventDefault();
                 break;

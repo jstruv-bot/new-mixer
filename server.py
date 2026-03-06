@@ -1002,8 +1002,6 @@ audio_router = AudioRouter()
 
 _state_lock = threading.Lock()
 _eq_settings = {}            # device_id -> {"bass": float, "treble": float}
-_device_groups = {}          # group_id -> {"name": str, "device_ids": list}
-_group_membership = {}       # device_id -> group_id  (reverse lookup, O(1))
 _last_known_volumes = {}     # device_id -> float
 _last_known_eq = {}          # device_id -> {"bass": float, "treble": float}
 _previous_device_ids = set() # for change detection
@@ -1089,12 +1087,6 @@ def _load_spotify_token():
 # ---------------------------------------------------------------------------
 
 
-def _get_groups_snapshot():
-    """Return a copy of _device_groups under lock."""
-    with _state_lock:
-        return {gid: dict(g) for gid, g in _device_groups.items()}
-
-
 def _sync_router(devices):
     """Start or update the AudioRouter with the given device list."""
     invalidate_endpoint_cache()
@@ -1111,14 +1103,13 @@ def _sync_router(devices):
 
 
 def _enrich_devices(devices):
-    """Add EQ / group / zone / cue state to device dicts. Returns a new list."""
+    """Add EQ / zone / cue state to device dicts. Returns a new list."""
     with _state_lock:
         enriched = []
         for d in devices:
             d2 = dict(d)
             did = d2["id"]
             d2["eq"] = dict(_eq_settings.get(did, {"bass": 0.0, "treble": 0.0}))
-            d2["group"] = _group_membership.get(did, None)
             d2["zone"] = _zone_positions.get(did, None)
             d2["cue"] = did in _cue_members
             d2["min_volume"] = _min_volumes.get(did, 0.0)
@@ -1601,7 +1592,7 @@ def ws_disconnect():
 
 @socketio.on("set_volume")
 def ws_set_volume(data):
-    """Set volume for a device, with group propagation."""
+    """Set volume for a device."""
     device_id = data.get("device_id")
     volume = data.get("volume")
     if device_id is None or volume is None:
@@ -1614,18 +1605,6 @@ def ws_set_volume(data):
 
     with _state_lock:
         _last_known_volumes[device_id] = volume
-        # Group propagation — snapshot members list and update all volumes in one lock
-        group_id = _group_membership.get(device_id)
-        group_members = []
-        if group_id and group_id in _device_groups:
-            group_members = [m for m in _device_groups[group_id].get("device_ids", [])
-                            if m != device_id]
-            for member_id in group_members:
-                _last_known_volumes[member_id] = volume
-
-    # Apply to grouped members
-    for member_id in group_members:
-        audio_router.set_volume(member_id, volume)
 
 
 @socketio.on("set_min_volume")
@@ -1676,45 +1655,6 @@ def ws_set_eq(data):
         "bass": bass,
         "treble": treble,
     })
-
-
-@socketio.on("set_group")
-def ws_set_group(data):
-    """Create or update a device group."""
-    group_id = data.get("group_id")
-    name = data.get("name", "")
-    device_ids = data.get("device_ids", [])
-    if group_id is None:
-        return
-
-    # Sanitize name
-    name = html.escape(str(name))[:64]
-
-    with _state_lock:
-        # Clear old memberships for this group
-        if group_id in _device_groups:
-            for old_did in _device_groups[group_id].get("device_ids", []):
-                if _group_membership.get(old_did) == group_id:
-                    del _group_membership[old_did]
-
-        _device_groups[group_id] = {"name": name, "device_ids": list(device_ids)}
-        for did in device_ids:
-            _group_membership[did] = group_id
-
-
-@socketio.on("delete_group")
-def ws_delete_group(data):
-    """Remove a device group."""
-    group_id = data.get("group_id")
-    if group_id is None:
-        return
-
-    with _state_lock:
-        if group_id in _device_groups:
-            for did in _device_groups[group_id].get("device_ids", []):
-                if _group_membership.get(did) == group_id:
-                    del _group_membership[did]
-            del _device_groups[group_id]
 
 
 @socketio.on("set_delay")
