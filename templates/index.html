@@ -1635,11 +1635,86 @@
         ctx.restore();
     }
     function drawFsWaterfall(w, h, cx, cy, theme) {
+        const spectrum = state.vizSpectrum;
+        const history = state.vizWaterfallHistory;
+        const maxColumns = Math.min(300, Math.floor(w));
+
+        // Push current spectrum as new column
+        const col = new Float32Array(8);
+        for (let i = 0; i < 8; i++) col[i] = spectrum[i] || 0;
+        history.push(col);
+        while (history.length > maxColumns) history.shift();
+
+        // Color map function: amplitude -> color
+        function ampToColor(amp) {
+            if (amp < 0.15) return `rgb(${Math.floor(10 + amp * 200)}, ${Math.floor(10 + amp * 100)}, ${Math.floor(40 + amp * 600)})`;
+            if (amp < 0.35) return `rgb(${Math.floor(amp * 200)}, ${Math.floor(80 + amp * 400)}, ${Math.floor(200 + amp * 150)})`;
+            if (amp < 0.6) return `rgb(${Math.floor(100 + amp * 255)}, ${Math.floor(200 + amp * 55)}, ${Math.floor(200 * (1 - amp))})`;
+            if (amp < 0.85) return `rgb(255, ${Math.floor(200 + amp * 55)}, ${Math.floor(100 * (1 - amp))})`;
+            return `rgb(255, ${Math.floor(150 + amp * 105)}, ${Math.floor(50 + amp * 80)})`;
+        }
+
+        const bandLabels = ['Sub', 'Bass', 'Low', 'Mid', 'UMid', 'Pres', 'Bril', 'Air'];
+        const labelWidth = 40;
+        const plotLeft = labelWidth;
+        const plotWidth = w - labelWidth;
+        const bandHeight = h / 8;
+        const colWidth = Math.max(1, plotWidth / maxColumns);
+
+        // Clear the plot area (no trail effect for waterfall)
+        ctx.fillStyle = theme.background;
+        ctx.globalAlpha = 1.0;
+        ctx.fillRect(0, 0, w, h);
+
+        // Draw spectrogram columns (newest on right)
+        for (let ci = 0; ci < history.length; ci++) {
+            const column = history[ci];
+            const x = plotLeft + (ci / maxColumns) * plotWidth;
+
+            for (let band = 0; band < 8; band++) {
+                const amp = column[band];
+                const y = (7 - band) * bandHeight;  // low freqs at bottom
+                ctx.fillStyle = ampToColor(amp);
+                ctx.globalAlpha = 0.8 + amp * 0.2;
+                ctx.fillRect(x, y, Math.ceil(colWidth) + 1, Math.ceil(bandHeight) + 1);
+            }
+        }
+
+        // Band labels on left edge
+        ctx.globalAlpha = 0.7;
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
         ctx.fillStyle = theme.primary;
-        ctx.globalAlpha = 0.3;
-        ctx.font = '24px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Frequency Waterfall', cx, cy);
+        for (let band = 0; band < 8; band++) {
+            const y = (7 - band) * bandHeight + bandHeight / 2;
+            ctx.fillText(bandLabels[band], labelWidth - 4, y);
+        }
+
+        // Horizontal grid lines
+        ctx.strokeStyle = theme.primary;
+        ctx.globalAlpha = 0.1;
+        ctx.lineWidth = 0.5;
+        for (let band = 1; band < 8; band++) {
+            const y = band * bandHeight;
+            ctx.beginPath();
+            ctx.moveTo(plotLeft, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+        }
+
+        // Current spectrum highlight (rightmost column glow)
+        if (history.length > 0) {
+            const lastX = plotLeft + ((history.length - 1) / maxColumns) * plotWidth;
+            ctx.strokeStyle = theme.primary;
+            ctx.globalAlpha = 0.4;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(lastX, 0);
+            ctx.lineTo(lastX, h);
+            ctx.stroke();
+        }
+
         ctx.globalAlpha = 1.0;
     }
     function drawFsOverlays(w, h) {
