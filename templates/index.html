@@ -172,19 +172,20 @@
         }
         .preset-toast.show { opacity: 1; }
 
-        /* ── Spotify Widget ──────────────────────────────────── */
+        /* ── Spotify Widget (Now Playing — main UI element) ── */
         .spotify-widget {
-            margin-top: 1.2rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem;
-            background: rgba(30, 215, 96, 0.06); border: 1px solid rgba(30, 215, 96, 0.2);
-            border-radius: 8px; padding: 0.6rem 1rem 0.8rem; max-width: 480px;
+            margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+            background: rgba(30, 215, 96, 0.06); border: 1px solid rgba(30, 215, 96, 0.25);
+            border-radius: 14px; padding: 1.2rem 1.5rem 1.4rem; max-width: 600px;
+            box-shadow: 0 0 20px rgba(30, 215, 96, 0.08);
         }
-        .spotify-top { display: flex; align-items: center; gap: 0.8rem; width: 100%; }
-        .spotify-art { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; }
+        .spotify-top { display: flex; align-items: center; gap: 1.2rem; width: 100%; }
+        .spotify-art { width: 88px; height: 88px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
         .spotify-info { flex: 1; min-width: 0; }
-        .spotify-track { font-size: 0.85rem; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .spotify-artist { font-size: 0.75rem; color: #8888aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .spotify-seek-row { display: flex; align-items: center; gap: 0.5rem; width: 100%; }
-        .spotify-time { font-size: 0.65rem; color: #8888aa; min-width: 32px; font-variant-numeric: tabular-nums; }
+        .spotify-track { font-size: 1.15rem; font-weight: 600; color: #f0f0f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+        .spotify-artist { font-size: 0.9rem; color: #9999bb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .spotify-seek-row { display: flex; align-items: center; gap: 0.6rem; width: 100%; }
+        .spotify-time { font-size: 0.75rem; color: #8888aa; min-width: 36px; font-variant-numeric: tabular-nums; }
         .spotify-time-left { text-align: right; }
         .spotify-time-right { text-align: left; }
         .spotify-progress { flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative; }
@@ -194,11 +195,11 @@
             content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%);
             width: 12px; height: 12px; background: #fff; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.4);
         }
-        .spotify-controls { display: flex; gap: 0.3rem; }
+        .spotify-controls { display: flex; gap: 0.4rem; }
         .spotify-controls button {
             background: rgba(30, 215, 96, 0.12); color: #1ed760;
             border: 1px solid rgba(30, 215, 96, 0.3);
-            padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer;
+            padding: 0.45rem 0.8rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer;
         }
         .spotify-controls button:hover { background: rgba(30, 215, 96, 0.25); }
         .spotify-connect { margin-top: 1rem; }
@@ -230,21 +231,16 @@
         .dj-btn:hover { background: rgba(0, 212, 255, 0.18); }
         .dj-btn.active { border-color: #1ed760; color: #1ed760; background: rgba(30, 215, 96, 0.12); }
 
-        /* Automation timeline */
-        .automation-bar {
-            width: 100%; max-width: 500px; height: 32px; margin-top: 0.5rem;
-            background: rgba(15, 15, 35, 0.8); border: 1px solid rgba(0, 212, 255, 0.15);
-            border-radius: 6px; position: relative; cursor: crosshair;
+        .bounce-settings {
+            display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+            padding: 0.4rem 0.8rem; margin-top: 0.3rem;
+            background: rgba(30, 215, 96, 0.06); border: 1px solid rgba(30, 215, 96, 0.15);
+            border-radius: 6px; font-size: 0.75rem; color: #aaa;
         }
-        .automation-bar .kf-marker {
-            position: absolute; top: 4px; width: 8px; height: 24px;
-            background: #00d4ff; border-radius: 3px; transform: translateX(-4px); cursor: grab;
-        }
-        .automation-bar .kf-marker:hover { background: #fff; }
-        .automation-bar .playhead {
-            position: absolute; top: 0; width: 2px; height: 100%;
-            background: #1ed760; pointer-events: none;
-        }
+        .bounce-settings.active { display: flex; }
+        .bounce-settings label { white-space: nowrap; min-width: 45px; }
+        .bounce-settings input[type=range] { width: 70px; height: 14px; accent-color: #1ed760; }
+        .bounce-settings .val { min-width: 32px; color: #1ed760; font-size: 0.7rem; }
 
         /* Latency badges */
         .latency-badge {
@@ -252,17 +248,6 @@
             background: rgba(15, 15, 35, 0.85); padding: 1px 4px; border-radius: 3px;
             pointer-events: none; white-space: nowrap;
         }
-
-        /* MIDI panel */
-        .midi-device-list { max-height: 120px; overflow-y: auto; margin-bottom: 0.5rem; }
-        .midi-device-item {
-            display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem;
-            cursor: pointer; border-radius: 4px;
-        }
-        .midi-device-item:hover { background: rgba(0, 212, 255, 0.08); }
-        .midi-device-item.selected { background: rgba(0, 212, 255, 0.15); color: #00d4ff; }
-        .midi-mapping-table { width: 100%; font-size: 0.75rem; }
-        .midi-mapping-table td { padding: 0.2rem 0.4rem; }
 
         /* ── Screen reader only ──────────────────────────────── */
         .sr-only {
@@ -297,8 +282,22 @@
             <span id="stereo-sep-val" style="min-width:28px;">0%</span>
         </span>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
-        <button id="btn-dj" type="button" title="DJ features menu">DJ</button>
+        <button id="btn-dj" type="button" title="Cue &amp; latency panels">More</button>
+        <button id="btn-party" type="button" title="Party Mode: auto-DJ + full stereo separation">Party</button>
         <button id="btn-refresh" type="button">Refresh Devices</button>
+    </div>
+
+    <div id="bounce-settings" class="bounce-settings">
+        <label>Pattern:</label>
+        <button id="bounce-pattern-btn" class="dj-btn" type="button" style="font-size:0.7rem;padding:2px 8px;">circle</button>
+        <label>Speed:</label>
+        <input type="range" id="bounce-speed" min="50" max="400" value="100" step="10">
+        <span id="bounce-speed-val" class="val">1.0x</span>
+        <label>Radius:</label>
+        <input type="range" id="bounce-radius" min="20" max="100" value="75" step="5">
+        <span id="bounce-radius-val" class="val">75%</span>
+        <label>BPM:</label>
+        <input type="number" id="bounce-bpm" min="40" max="300" value="120" step="1" style="width:50px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;text-align:center;font-size:0.75rem;">
     </div>
 
     <div class="preset-bar">
@@ -343,6 +342,11 @@
             <input type="range" id="eq-pan" min="-100" max="100" value="0" step="1">
             <span id="eq-pan-val">C</span>
         </div>
+        <div class="eq-slider-row">
+            <label>Max Vol</label>
+            <input type="range" id="eq-maxvol" min="0" max="100" value="0" step="5">
+            <span id="eq-maxvol-val">Off</span>
+        </div>
     </div>
 
     <div id="spotify-widget" class="spotify-widget" style="display:none;">
@@ -371,57 +375,6 @@
     </div>
 
     <!-- DJ Feature Panels -->
-    <div id="effects-panel" class="dj-panel" style="display:none;">
-        <div class="panel-header">
-            <span id="fx-device-name">Effects</span>
-            <button id="fx-close" type="button">&times;</button>
-        </div>
-        <div class="dj-row">
-            <label>Effect</label>
-            <select id="fx-type">
-                <option value="off">Off</option>
-                <option value="tremolo">Tremolo</option>
-                <option value="autopan">Auto-Pan</option>
-                <option value="filter_sweep">Filter Sweep</option>
-            </select>
-        </div>
-        <div class="dj-row">
-            <label>Rate</label>
-            <input type="range" id="fx-rate" min="1" max="200" value="100" step="1">
-            <span id="fx-rate-val" class="val">2.0</span>
-        </div>
-        <div class="dj-row">
-            <label>Depth</label>
-            <input type="range" id="fx-depth" min="0" max="100" value="50" step="1">
-            <span id="fx-depth-val" class="val">50%</span>
-        </div>
-        <div class="dj-row">
-            <label>Delay</label>
-            <input type="range" id="fx-delay" min="0" max="500" value="0" step="1">
-            <span id="fx-delay-val" class="val">0ms</span>
-        </div>
-        <div class="dj-row" style="margin-top:0.4rem;">
-            <button id="fx-cue-btn" class="dj-btn" type="button">Cue: Off</button>
-            <button id="fx-sync-bpm" class="dj-btn" type="button">Sync BPM</button>
-        </div>
-    </div>
-
-    <div id="midi-panel" class="dj-panel" style="display:none;">
-        <div class="panel-header">
-            <span>MIDI Controller</span>
-            <button id="midi-close" type="button">&times;</button>
-        </div>
-        <div id="midi-status" style="color:#8888aa;font-size:0.8rem;margin-bottom:0.5rem;">Loading MIDI devices...</div>
-        <div id="midi-device-list" class="midi-device-list"></div>
-        <div style="margin-top:0.5rem;font-size:0.75rem;color:#8888aa;">
-            <strong>Default Mappings:</strong> CC1=X, CC2=Y, CC7=Vol
-        </div>
-        <div id="midi-learn" style="margin-top:0.5rem;">
-            <button id="midi-learn-btn" class="dj-btn" type="button">MIDI Learn</button>
-            <span id="midi-learn-status" style="font-size:0.75rem;color:#8888aa;margin-left:0.5rem;"></span>
-        </div>
-    </div>
-
     <div id="cue-panel" class="dj-panel" style="display:none;">
         <div class="panel-header">
             <span>Cue/Preview Channel</span>
@@ -434,33 +387,6 @@
             </select>
         </div>
         <div id="cue-device-list" style="margin-top:0.5rem;"></div>
-    </div>
-
-    <div id="automation-panel" class="dj-panel" style="display:none;">
-        <div class="panel-header">
-            <span>Crossfade Automation</span>
-            <button id="auto-close" type="button">&times;</button>
-        </div>
-        <div class="dj-row">
-            <button id="auto-record" class="dj-btn" type="button">Record</button>
-            <button id="auto-play" class="dj-btn" type="button">Play</button>
-            <button id="auto-clear" class="dj-btn" type="button">Clear</button>
-            <span id="auto-status" style="font-size:0.75rem;color:#8888aa;margin-left:0.5rem;"></span>
-        </div>
-        <div id="auto-timeline" class="automation-bar">
-            <div id="auto-playhead" class="playhead" style="left:0%;"></div>
-        </div>
-    </div>
-
-    <div id="setlist-panel" class="dj-panel" style="display:none;">
-        <div class="panel-header">
-            <span>Setlist Presets</span>
-            <button id="setlist-close" type="button">&times;</button>
-        </div>
-        <div id="setlist-list" style="max-height:150px;overflow-y:auto;"></div>
-        <div class="dj-row" style="margin-top:0.5rem;">
-            <button id="setlist-link" class="dj-btn" type="button">Link Current State to Track</button>
-        </div>
     </div>
 
     <div id="latency-panel" class="dj-panel" style="display:none;">
@@ -521,17 +447,17 @@
         displayLevels:  {},      // device_id -> smoothed display level for meter arcs
         curveType:      localStorage.getItem('mixer-curve') || 'inverse-square',
         minVolumes:     JSON.parse(localStorage.getItem('mixer-minvols') || '{}'),  // device_id -> 0-1
-        mutedDevices:   new Set(),  // legacy: kept for preset compatibility
         eqTarget:       null,    // device_id of currently open EQ panel
         restoredDevice: null,    // {id, until} for restore flash animation
         presets:        JSON.parse(localStorage.getItem('mixer-presets') || 'null') || new Array(9).fill(null),
         activePreset:   -1,
         presetAnimating: false,
         presetAnimTarget: null,
-        focusedElement: null,    // {type: 'control'} or {type: 'device', index}
         autoBounce:     'off',   // 'off' | 'smooth' | 'beat'
-        bounceBPM:      120,     // current track BPM
-        bounceTrackId:  '',      // last track we fetched BPM for
+        bounceSpeed:    parseFloat(localStorage.getItem('mixer-bounce-speed') || '1.0'),
+        bounceRadius:   parseFloat(localStorage.getItem('mixer-bounce-radius') || '0.75'),
+        bouncePattern:  localStorage.getItem('mixer-bounce-pattern') || 'circle',
+        bounceBPM:      parseInt(localStorage.getItem('mixer-bounce-bpm') || '120'),
         // Auto-DJ: energy-reactive crossfading
         autoDJ:         false,
         djPrimarySpeaker: 0,     // index of current "home" speaker
@@ -544,15 +470,9 @@
         zoneMode:       false,   // true = free 2D placement, false = ring
         zonePositions:  JSON.parse(localStorage.getItem('mixer-zones') || '{}'),
         draggingDevice: null,    // index of device being dragged in zone mode
-        fxTarget:       null,    // device_id of currently open effects panel
         latencyData:    {},      // device_id -> ms
         cueMembers:     new Set(),
         cueDevice:      null,
-        setlistPresets: {},      // track_id -> preset
-        automationKFs:  [],      // [{pct, x, y}]
-        automationActive: false,
-        automationRecording: false,
-        midiLearnActive: false,
         currentTrackId: '',
     };
 
@@ -662,51 +582,6 @@
         markDirty();
     });
 
-    socket.on("setlist_update", (data) => {
-        state.setlistPresets = data;
-        renderSetlistPanel();
-    });
-
-    socket.on("setlist_preset_match", (data) => {
-        // Auto-load matched preset
-        if (data.preset) {
-            state.controlPoint.x = data.preset.controlPoint?.x ?? CENTER;
-            state.controlPoint.y = data.preset.controlPoint?.y ?? CENTER;
-            state.curveType = data.preset.curveType || 'inverse-square';
-            curveSelect.value = state.curveType;
-            updateVolumes();
-            showToast('Setlist: loaded preset for track');
-        }
-    });
-
-    socket.on("automation_position", (pos) => {
-        if (state.automationActive && !state.isDragging) {
-            state.controlPoint.x = pos.x;
-            state.controlPoint.y = pos.y;
-            updateVolumes();
-            markDirty();
-        }
-    });
-
-    socket.on("automation_update", (data) => {
-        state.automationKFs = data.keyframes || [];
-        state.automationActive = data.active || false;
-        renderAutomationTimeline();
-    });
-
-    socket.on("midi_cc", (data) => {
-        if (data.target === 'crossfade_x') {
-            state.controlPoint.x = CENTER + (data.value - 0.5) * 2 * (RING_RADIUS - CONTROL_RADIUS);
-            updateVolumes(); markDirty();
-        } else if (data.target === 'crossfade_y') {
-            state.controlPoint.y = CENTER + (data.value - 0.5) * 2 * (RING_RADIUS - CONTROL_RADIUS);
-            updateVolumes(); markDirty();
-        } else if (data.target === 'volume' && data.device_id) {
-            // Volume already set on backend, just update display
-            state.targetVolumes[data.device_id] = data.value;
-            markDirty();
-        }
-    });
 
     // Spotify state + cached DOM refs
     let spotifyPlaying = false;
@@ -745,14 +620,6 @@
             spotifyLastUpdate = Date.now();
             spotifyEls.playPause.innerHTML = spotifyPlaying ? '&#9646;&#9646;' : '&#9654;';
             state.currentTrackId = data.track_id || '';
-            // Fetch BPM when track changes
-            if (data.track_id && data.track_id !== state.bounceTrackId) {
-                state.bounceTrackId = data.track_id;
-                fetch('/api/spotify/audio-features/' + data.track_id)
-                    .then(r => r.json())
-                    .then(d => { state.bounceBPM = d.tempo || 120; })
-                    .catch(() => { state.bounceBPM = 120; });
-            }
             // Auto-DJ: rotate primary speaker on track change
             if (state.autoDJ && data.track_id && data.track_id !== state.djLastTrackId) {
                 state.djLastTrackId = data.track_id;
@@ -768,9 +635,8 @@
 
     // Audio energy for Auto-DJ
     socket.on("audio_energy", (data) => {
-        if (state.autoDJ) {
-            state.djEnergy = data.energy || 0;
-        }
+        state.djEnergy = data.energy || 0;
+        if (state.djEnergy > 0.01) markDirty();
     });
 
     // Progress bar interpolation + time display
@@ -1012,19 +878,20 @@
         const n = state.devices.length;
         if (n === 0) return;
 
-        const weights = [];
-
-        // 1. Compute weights using the selected curve
+        // 1. Compute weights using the selected curve (with inline max tracking)
+        let maxWeight = 0;
+        const weights = new Array(n);
         for (let i = 0; i < n; i++) {
-            const pos  = devicePosition(i, n);
-            const dx   = state.controlPoint.x - pos.x;
-            const dy   = state.controlPoint.y - pos.y;
+            const pos = devicePosition(i, n);
+            const dx = state.controlPoint.x - pos.x;
+            const dy = state.controlPoint.y - pos.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            weights.push(computeWeight(dist, state.curveType));
+            const w = computeWeight(dist, state.curveType);
+            weights[i] = w;
+            if (w > maxWeight) maxWeight = w;
         }
 
         // 2. Normalize so the max weight becomes 1.0, enforce per-device min volume
-        const maxWeight = Math.max(...weights);
         for (let i = 0; i < n; i++) {
             const did = state.devices[i].id;
             let vol = maxWeight > 0 ? weights[i] / maxWeight : 0;
@@ -1067,6 +934,13 @@
 
     // ── Drawing ───────────────────────────────────────────────────────
 
+    const _ringGlow = (() => {
+        const g = ctx.createRadialGradient(CENTER, CENTER, RING_RADIUS - 40, CENTER, CENTER, RING_RADIUS + 10);
+        g.addColorStop(0, "rgba(0, 212, 255, 0.0)");
+        g.addColorStop(1, "rgba(0, 212, 255, 0.04)");
+        return g;
+    })();
+
     /**
      * Main render function.  Clears the canvas and redraws everything:
      *   1. Background
@@ -1088,17 +962,29 @@
         ctx.lineWidth   = 1;
         ctx.stroke();
 
-        // Inner subtle radial glow
-        const ringGlow = ctx.createRadialGradient(
-            CENTER, CENTER, RING_RADIUS - 40,
-            CENTER, CENTER, RING_RADIUS + 10
-        );
-        ringGlow.addColorStop(0, "rgba(0, 212, 255, 0.0)");
-        ringGlow.addColorStop(1, "rgba(0, 212, 255, 0.04)");
+        // Inner subtle radial glow (cached gradient)
         ctx.beginPath();
         ctx.arc(CENTER, CENTER, RING_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = ringGlow;
+        ctx.fillStyle = _ringGlow;
         ctx.fill();
+
+        // Energy-reactive ring pulse
+        const energy = state.djEnergy || 0;
+        if (energy > 0.01) {
+            const pulseRadius = RING_RADIUS + energy * 15;
+            const pulseGlow = ctx.createRadialGradient(
+                CENTER, CENTER, RING_RADIUS - 10,
+                CENTER, CENTER, pulseRadius
+            );
+            const alpha = energy * 0.15;
+            pulseGlow.addColorStop(0, 'rgba(30, 215, 96, 0)');
+            pulseGlow.addColorStop(0.5, 'rgba(30, 215, 96, ' + alpha + ')');
+            pulseGlow.addColorStop(1, 'rgba(30, 215, 96, 0)');
+            ctx.beginPath();
+            ctx.arc(CENTER, CENTER, pulseRadius, 0, Math.PI * 2);
+            ctx.fillStyle = pulseGlow;
+            ctx.fill();
+        }
 
         const n = state.devices.length;
 
@@ -1231,6 +1117,23 @@
                 }
             }
 
+            // Energy pulse around device node
+            const level = state.displayLevels[id] || 0;
+            if (level > 0.05) {
+                ctx.save();
+                const nodeGlow = ctx.createRadialGradient(
+                    pos.x, pos.y, DEVICE_RADIUS,
+                    pos.x, pos.y, DEVICE_RADIUS + level * 20
+                );
+                nodeGlow.addColorStop(0, 'rgba(0, 212, 255, ' + (level * 0.3) + ')');
+                nodeGlow.addColorStop(1, 'rgba(0, 212, 255, 0)');
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, DEVICE_RADIUS + level * 20, 0, Math.PI * 2);
+                ctx.fillStyle = nodeGlow;
+                ctx.fill();
+                ctx.restore();
+            }
+
             // Device name label (always shown)
             ctx.fillStyle    = unavailable ? "#555570" : "#c0c0d8";
             ctx.font         = "11px sans-serif";
@@ -1259,10 +1162,6 @@
                 ctx.fillText('CUE', pos.x, pos.y - DEVICE_RADIUS - 6);
             }
 
-            // Delay indicator
-            const delayInfo = state.devices[i]?.delay_ms;
-            // (delay shown in effects panel, not on canvas)
-
             // Restore flash animation
             if (state.restoredDevice && state.restoredDevice.id === id && Date.now() < state.restoredDevice.until) {
                 const progress = (state.restoredDevice.until - Date.now()) / 1000;
@@ -1272,24 +1171,6 @@
                 ctx.lineWidth = 2;
                 ctx.stroke();
             }
-        }
-
-        // Focus ring
-        if (state.focusedElement) {
-            ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.5;
-            if (state.focusedElement.type === 'control') {
-                ctx.beginPath();
-                ctx.arc(state.controlPoint.x, state.controlPoint.y, CONTROL_RADIUS + 4, 0, Math.PI * 2);
-                ctx.stroke();
-            } else if (state.focusedElement.type === 'device' && state.focusedElement.index < n) {
-                const fpos = devicePosition(state.focusedElement.index, n);
-                ctx.beginPath();
-                ctx.arc(fpos.x, fpos.y, DEVICE_RADIUS + 4, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-            ctx.setLineDash([]);
         }
 
         // 4. Control point (draggable dot)
@@ -1344,25 +1225,60 @@
         updateVolumes();
     });
 
-    // ── Auto-bounce toggle ──────────────────────────────────────────────
+    // ── Bounce settings ─────────────────────────────────────────────
     const btnBounce = document.getElementById('btn-bounce');
-    const bounceModes = ['off', 'smooth', 'beat'];
-    const bounceLabels = { off: 'Bounce: Off', smooth: 'Bounce: Smooth', beat: 'Bounce: Beat' };
+    const bounceSettings = document.getElementById('bounce-settings');
+    const bouncePatterns = ['circle', 'figure-8', 'ping-pong', 'random-wander', 'beat-snap'];
+    const bouncePatternBtn = document.getElementById('bounce-pattern-btn');
+    const bounceSpeedSlider = document.getElementById('bounce-speed');
+    const bounceRadiusSlider = document.getElementById('bounce-radius');
+    const bounceBpmInput = document.getElementById('bounce-bpm');
+
+    // Init UI from state
+    bouncePatternBtn.textContent = state.bouncePattern;
+    bounceSpeedSlider.value = Math.round(state.bounceSpeed * 100);
+    document.getElementById('bounce-speed-val').textContent = state.bounceSpeed.toFixed(1) + 'x';
+    bounceRadiusSlider.value = Math.round(state.bounceRadius * 100);
+    document.getElementById('bounce-radius-val').textContent = Math.round(state.bounceRadius * 100) + '%';
+    bounceBpmInput.value = state.bounceBPM;
 
     btnBounce.addEventListener('click', () => {
-        const idx = (bounceModes.indexOf(state.autoBounce) + 1) % bounceModes.length;
-        state.autoBounce = bounceModes[idx];
-        btnBounce.textContent = bounceLabels[state.autoBounce];
-        btnBounce.style.borderColor = state.autoBounce !== 'off'
-            ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        state.autoBounce = state.autoBounce === 'off' ? 'on' : 'off';
+        btnBounce.textContent = state.autoBounce !== 'off' ? 'Bounce: On' : 'Bounce: Off';
+        btnBounce.style.borderColor = state.autoBounce !== 'off' ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
         btnBounce.style.color = state.autoBounce !== 'off' ? '#1ed760' : '#00d4ff';
-        // Disable Auto-DJ when bounce is activated (they'd conflict)
+        bounceSettings.classList.toggle('active', state.autoBounce !== 'off');
         if (state.autoBounce !== 'off' && state.autoDJ) {
             state.autoDJ = false;
             document.getElementById('btn-autodj').textContent = 'Auto-DJ: Off';
             document.getElementById('btn-autodj').style.borderColor = 'rgba(0, 212, 255, 0.3)';
             document.getElementById('btn-autodj').style.color = '#00d4ff';
         }
+    });
+
+    bouncePatternBtn.addEventListener('click', () => {
+        const idx = (bouncePatterns.indexOf(state.bouncePattern) + 1) % bouncePatterns.length;
+        state.bouncePattern = bouncePatterns[idx];
+        bouncePatternBtn.textContent = state.bouncePattern;
+        localStorage.setItem('mixer-bounce-pattern', state.bouncePattern);
+    });
+
+    bounceSpeedSlider.addEventListener('input', () => {
+        state.bounceSpeed = parseInt(bounceSpeedSlider.value) / 100;
+        document.getElementById('bounce-speed-val').textContent = state.bounceSpeed.toFixed(1) + 'x';
+        localStorage.setItem('mixer-bounce-speed', state.bounceSpeed);
+    });
+
+    bounceRadiusSlider.addEventListener('input', () => {
+        state.bounceRadius = parseInt(bounceRadiusSlider.value) / 100;
+        document.getElementById('bounce-radius-val').textContent = Math.round(state.bounceRadius * 100) + '%';
+        localStorage.setItem('mixer-bounce-radius', state.bounceRadius);
+    });
+
+    bounceBpmInput.addEventListener('change', () => {
+        state.bounceBPM = Math.max(40, Math.min(300, parseInt(bounceBpmInput.value) || 120));
+        bounceBpmInput.value = state.bounceBPM;
+        localStorage.setItem('mixer-bounce-bpm', state.bounceBPM);
     });
 
     // ── Auto-DJ toggle ──────────────────────────────────────────────────
@@ -1376,9 +1292,44 @@
         // Disable auto-bounce when Auto-DJ is on (they'd conflict)
         if (state.autoDJ && state.autoBounce !== 'off') {
             state.autoBounce = 'off';
-            btnBounce.textContent = bounceLabels['off'];
+            btnBounce.textContent = 'Bounce: Off';
             btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
             btnBounce.style.color = '#00d4ff';
+            bounceSettings.classList.remove('active');
+        }
+    });
+
+    // ── Party Mode ──────────────────────────────────────────────────
+    const btnParty = document.getElementById('btn-party');
+    let partyMode = false;
+
+    btnParty.addEventListener('click', () => {
+        partyMode = !partyMode;
+        btnParty.style.borderColor = partyMode ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        btnParty.style.color = partyMode ? '#1ed760' : '#00d4ff';
+        btnParty.textContent = partyMode ? 'Party: On' : 'Party';
+
+        if (partyMode) {
+            // Enable Auto-DJ
+            state.autoDJ = true;
+            btnAutoDJ.textContent = 'Auto-DJ: On';
+            btnAutoDJ.style.borderColor = 'rgba(30, 215, 96, 0.6)';
+            btnAutoDJ.style.color = '#1ed760';
+            // Disable bounce (conflicts with Auto-DJ)
+            state.autoBounce = 'off';
+            btnBounce.textContent = 'Bounce: Off';
+            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
+            btnBounce.style.color = '#00d4ff';
+            bounceSettings.classList.remove('active');
+            // Set stereo separation to 80%
+            state.stereoSep = 0.8;
+            document.getElementById('stereo-sep').value = 80;
+            document.getElementById('stereo-sep-val').textContent = '80%';
+            socket.emit('set_stereo_separation', { value: 0.8 });
+            localStorage.setItem('mixer-stereo-sep', '0.8');
+            showToast('Party Mode activated');
+        } else {
+            showToast('Party Mode deactivated');
         }
     });
 
@@ -1526,6 +1477,8 @@
     const eqDelayVal = document.getElementById('eq-delay-val');
     const eqPan = document.getElementById('eq-pan');
     const eqPanVal = document.getElementById('eq-pan-val');
+    const eqMaxVol = document.getElementById('eq-maxvol');
+    const eqMaxVolVal = document.getElementById('eq-maxvol-val');
     const eqDeviceName = document.getElementById('eq-device-name');
     const eqClose = document.getElementById('eq-close');
 
@@ -1548,6 +1501,9 @@
         const panVal = Math.round((state.panPositions[deviceId] || 0) * 100);
         eqPan.value = panVal;
         eqPanVal.textContent = panVal === 0 ? 'C' : (panVal < 0 ? 'L' + Math.abs(panVal) : 'R' + panVal);
+        const maxV = dev.max_volume || 0;
+        eqMaxVol.value = Math.round(maxV * 100);
+        eqMaxVolVal.textContent = maxV > 0 ? Math.round(maxV * 100) + '%' : 'Off';
         eqPanel.style.display = 'block';
     }
 
@@ -1598,6 +1554,13 @@
         state.panPositions[state.eqTarget] = pan;
         localStorage.setItem('mixer-pans', JSON.stringify(state.panPositions));
         socket.emit('set_pan', { device_id: state.eqTarget, pan: pan });
+    });
+
+    eqMaxVol.addEventListener('input', () => {
+        if (!state.eqTarget) return;
+        const val = parseInt(eqMaxVol.value);
+        eqMaxVolVal.textContent = val === 0 ? 'Off' : val + '%';
+        socket.emit('set_max_volume', { device_id: state.eqTarget, max_volume: val / 100 });
     });
 
     // Global stereo separation slider
@@ -1653,7 +1616,6 @@
         state.presets[index] = {
             controlPoint: { x: state.controlPoint.x, y: state.controlPoint.y },
             curveType: state.curveType,
-            mutedDevices: [...state.mutedDevices],
             minVolumes: Object.assign({}, state.minVolumes),
             autoDJ: state.autoDJ,
             panPositions: Object.assign({}, state.panPositions),
@@ -1674,8 +1636,6 @@
         const curveSelect = document.getElementById("curve-select");
         if (curveSelect) curveSelect.value = state.curveType;
         localStorage.setItem('mixer-curve', state.curveType);
-        state.mutedDevices = new Set(preset.mutedDevices || []);
-        localStorage.setItem('mixer-muted', JSON.stringify([...state.mutedDevices]));
         if (preset.minVolumes) {
             state.minVolumes = Object.assign({}, preset.minVolumes);
             localStorage.setItem('mixer-minvols', JSON.stringify(state.minVolumes));
@@ -1745,33 +1705,8 @@
                 debouncedAnnounce();
                 e.preventDefault();
                 break;
-            case 'Tab': {
-                e.preventDefault();
-                if (!state.focusedElement) {
-                    state.focusedElement = { type: 'control' };
-                    announce('Control point focused');
-                } else if (state.focusedElement.type === 'control') {
-                    if (n > 0) {
-                        state.focusedElement = { type: 'device', index: 0 };
-                        announce(state.devices[0].name + ' focused');
-                    }
-                } else {
-                    const next = (state.focusedElement.index + (e.shiftKey ? -1 : 1) + n) % n;
-                    state.focusedElement = { type: 'device', index: next };
-                    announce(state.devices[next].name + ' focused');
-                }
-                break;
-            }
-            case 'e': case 'E':
-                if (state.focusedElement && state.focusedElement.type === 'device') {
-                    const did = state.devices[state.focusedElement.index].id;
-                    if (state.eqTarget === did) closeEQPanel(); else openEQPanel(did);
-                    e.preventDefault();
-                }
-                break;
             case 'Escape':
                 closeEQPanel();
-                state.focusedElement = null;
                 e.preventDefault();
                 break;
         }
@@ -1781,8 +1716,7 @@
         if (num >= 1 && num <= 9 && !e.ctrlKey && !e.altKey && !e.metaKey) {
             if (e.shiftKey) {
                 savePreset(num - 1);
-            } else if (!state.focusedElement || state.focusedElement.type !== 'device') {
-                // Only load presets when not focused on a device (to avoid conflicts with Tab navigation)
+            } else {
                 loadPreset(num - 1);
             }
             e.preventDefault();
@@ -1817,152 +1751,13 @@
 
     // ── DJ Menu (dropdown for feature panels) ─────────────────────────
     const btnDJ = document.getElementById('btn-dj');
-    const djPanelIds = ['effects-panel', 'midi-panel', 'cue-panel', 'automation-panel', 'setlist-panel', 'latency-panel'];
+    const djPanelIds = ['cue-panel', 'latency-panel'];
 
     btnDJ.addEventListener('click', () => {
         const anyVisible = djPanelIds.some(id => document.getElementById(id).style.display !== 'none');
         djPanelIds.forEach(id => {
             document.getElementById(id).style.display = anyVisible ? 'none' : 'block';
         });
-    });
-
-    // ── Effects Panel ──────────────────────────────────────────────────
-    const fxPanel = document.getElementById('effects-panel');
-    const fxType = document.getElementById('fx-type');
-    const fxRate = document.getElementById('fx-rate');
-    const fxDepth = document.getElementById('fx-depth');
-    const fxDelay = document.getElementById('fx-delay');
-    const fxRateVal = document.getElementById('fx-rate-val');
-    const fxDepthVal = document.getElementById('fx-depth-val');
-    const fxDelayVal = document.getElementById('fx-delay-val');
-    const fxCueBtn = document.getElementById('fx-cue-btn');
-    const fxSyncBpm = document.getElementById('fx-sync-bpm');
-    const fxDeviceName = document.getElementById('fx-device-name');
-
-    function openFxPanel(deviceId) {
-        const dev = state.deviceMap.get(deviceId);
-        if (!dev) return;
-        state.fxTarget = deviceId;
-        fxDeviceName.textContent = 'FX: ' + dev.name;
-        fxType.value = 'off';
-        fxRate.value = 100;
-        fxDepth.value = 50;
-        fxDelay.value = 0;
-        fxRateVal.textContent = '2.0';
-        fxDepthVal.textContent = '50%';
-        fxDelayVal.textContent = '0ms';
-        fxCueBtn.textContent = state.cueMembers.has(deviceId) ? 'Cue: On' : 'Cue: Off';
-        fxCueBtn.className = state.cueMembers.has(deviceId) ? 'dj-btn active' : 'dj-btn';
-        fxPanel.style.display = 'block';
-    }
-
-    document.getElementById('fx-close').addEventListener('click', () => {
-        fxPanel.style.display = 'none';
-        state.fxTarget = null;
-    });
-
-    function sendFx() {
-        if (!state.fxTarget) return;
-        const type = fxType.value;
-        const rateHz = parseInt(fxRate.value) / 50; // 0.02 to 4.0 Hz
-        const depth = parseInt(fxDepth.value) / 100;
-        fxRateVal.textContent = rateHz.toFixed(1);
-        fxDepthVal.textContent = parseInt(fxDepth.value) + '%';
-        socket.emit('set_effect', {
-            device_id: state.fxTarget, type: type,
-            rate_hz: rateHz, depth: depth
-        });
-    }
-
-    fxType.addEventListener('change', sendFx);
-    fxRate.addEventListener('input', sendFx);
-    fxDepth.addEventListener('input', sendFx);
-
-    fxDelay.addEventListener('input', () => {
-        if (!state.fxTarget) return;
-        const ms = parseInt(fxDelay.value);
-        fxDelayVal.textContent = ms + 'ms';
-        socket.emit('set_delay', { device_id: state.fxTarget, delay_ms: ms });
-    });
-
-    fxCueBtn.addEventListener('click', () => {
-        if (!state.fxTarget) return;
-        const isCued = state.cueMembers.has(state.fxTarget);
-        socket.emit('set_cue', { device_id: state.fxTarget, enabled: !isCued });
-        if (isCued) state.cueMembers.delete(state.fxTarget);
-        else state.cueMembers.add(state.fxTarget);
-        fxCueBtn.textContent = !isCued ? 'Cue: On' : 'Cue: Off';
-        fxCueBtn.className = !isCued ? 'dj-btn active' : 'dj-btn';
-    });
-
-    fxSyncBpm.addEventListener('click', () => {
-        // Sync effect rate to current BPM
-        if (state.bounceBPM > 0) {
-            const rateHz = state.bounceBPM / 60; // beats per second
-            fxRate.value = Math.round(rateHz * 50);
-            sendFx();
-            showToast('Synced to ' + Math.round(state.bounceBPM) + ' BPM');
-        }
-    });
-
-    // Right-click on device opens FX panel (dblclick still opens EQ)
-    canvas.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const p = canvasCoords(e);
-        const n = state.devices.length;
-        for (let i = 0; i < n; i++) {
-            const pos = devicePosition(i, n);
-            const dx = p.x - pos.x;
-            const dy = p.y - pos.y;
-            if (dx * dx + dy * dy < DEVICE_RADIUS2) {
-                openFxPanel(state.devices[i].id);
-                return;
-            }
-        }
-    });
-
-    // ── MIDI Panel ─────────────────────────────────────────────────────
-    const midiPanel = document.getElementById('midi-panel');
-    const midiDeviceList = document.getElementById('midi-device-list');
-    const midiStatus = document.getElementById('midi-status');
-    let midiLearnActive = false;
-
-    document.getElementById('midi-close').addEventListener('click', () => {
-        midiPanel.style.display = 'none';
-    });
-
-    async function loadMidiDevices() {
-        try {
-            const resp = await fetch('/api/midi/devices');
-            const data = await resp.json();
-            if (!data.available) {
-                midiStatus.textContent = 'MIDI not available (install mido + python-rtmidi)';
-                return;
-            }
-            midiStatus.textContent = data.devices.length + ' MIDI device(s) found';
-            midiDeviceList.innerHTML = '';
-            for (const name of data.devices) {
-                const div = document.createElement('div');
-                div.className = 'midi-device-item' + (name === data.selected ? ' selected' : '');
-                div.textContent = name;
-                div.addEventListener('click', () => {
-                    socket.emit('set_midi_device', { name: name });
-                    loadMidiDevices();
-                    showToast('MIDI: ' + name);
-                });
-                midiDeviceList.appendChild(div);
-            }
-        } catch (e) {
-            midiStatus.textContent = 'Failed to load MIDI devices';
-        }
-    }
-
-    document.getElementById('midi-learn-btn').addEventListener('click', () => {
-        midiLearnActive = !midiLearnActive;
-        document.getElementById('midi-learn-status').textContent =
-            midiLearnActive ? 'Move a MIDI control...' : '';
-        document.getElementById('midi-learn-btn').className =
-            midiLearnActive ? 'dj-btn active' : 'dj-btn';
     });
 
     // ── Cue Panel ──────────────────────────────────────────────────────
@@ -2008,126 +1803,6 @@
         }
     }
 
-    // ── Automation Panel ───────────────────────────────────────────────
-    const autoTimeline = document.getElementById('auto-timeline');
-    const autoPlayhead = document.getElementById('auto-playhead');
-    const autoStatus = document.getElementById('auto-status');
-    let autoRecordStart = 0;
-
-    document.getElementById('auto-close').addEventListener('click', () => {
-        document.getElementById('automation-panel').style.display = 'none';
-    });
-
-    document.getElementById('auto-record').addEventListener('click', function() {
-        state.automationRecording = !state.automationRecording;
-        this.className = state.automationRecording ? 'dj-btn active' : 'dj-btn';
-        this.textContent = state.automationRecording ? 'Stop Rec' : 'Record';
-        if (state.automationRecording) {
-            state.automationKFs = [];
-            autoRecordStart = Date.now();
-            autoStatus.textContent = 'Recording...';
-        } else {
-            autoStatus.textContent = state.automationKFs.length + ' keyframes recorded';
-            socket.emit('set_automation', {
-                keyframes: state.automationKFs, active: false });
-            renderAutomationTimeline();
-        }
-    });
-
-    document.getElementById('auto-play').addEventListener('click', function() {
-        state.automationActive = !state.automationActive;
-        this.className = state.automationActive ? 'dj-btn active' : 'dj-btn';
-        this.textContent = state.automationActive ? 'Stop' : 'Play';
-        socket.emit('set_automation', {
-            keyframes: state.automationKFs,
-            active: state.automationActive });
-    });
-
-    document.getElementById('auto-clear').addEventListener('click', () => {
-        state.automationKFs = [];
-        state.automationActive = false;
-        document.getElementById('auto-play').textContent = 'Play';
-        document.getElementById('auto-play').className = 'dj-btn';
-        socket.emit('set_automation', { keyframes: [], active: false });
-        renderAutomationTimeline();
-        autoStatus.textContent = 'Cleared';
-    });
-
-    // Click on timeline to add keyframe
-    autoTimeline.addEventListener('click', (e) => {
-        const rect = autoTimeline.getBoundingClientRect();
-        const pct = (e.clientX - rect.left) / rect.width;
-        state.automationKFs.push({
-            pct: Math.max(0, Math.min(1, pct)),
-            x: state.controlPoint.x,
-            y: state.controlPoint.y
-        });
-        state.automationKFs.sort((a, b) => a.pct - b.pct);
-        renderAutomationTimeline();
-    });
-
-    function renderAutomationTimeline() {
-        // Remove existing markers
-        autoTimeline.querySelectorAll('.kf-marker').forEach(el => el.remove());
-        for (let i = 0; i < state.automationKFs.length; i++) {
-            const kf = state.automationKFs[i];
-            const marker = document.createElement('div');
-            marker.className = 'kf-marker';
-            marker.style.left = (kf.pct * 100) + '%';
-            marker.title = Math.round(kf.pct * 100) + '% → (' +
-                Math.round(kf.x) + ', ' + Math.round(kf.y) + ')';
-            autoTimeline.appendChild(marker);
-        }
-    }
-
-    // ── Setlist Panel ──────────────────────────────────────────────────
-    document.getElementById('setlist-close').addEventListener('click', () => {
-        document.getElementById('setlist-panel').style.display = 'none';
-    });
-
-    document.getElementById('setlist-link').addEventListener('click', () => {
-        if (!state.currentTrackId) {
-            showToast('No track playing');
-            return;
-        }
-        const preset = {
-            controlPoint: { x: state.controlPoint.x, y: state.controlPoint.y },
-            curveType: state.curveType,
-        };
-        socket.emit('save_setlist_preset', {
-            track_id: state.currentTrackId, preset: preset });
-        state.setlistPresets[state.currentTrackId] = preset;
-        renderSetlistPanel();
-        showToast('Linked to current track');
-    });
-
-    function renderSetlistPanel() {
-        const list = document.getElementById('setlist-list');
-        list.innerHTML = '';
-        const entries = Object.entries(state.setlistPresets);
-        if (entries.length === 0) {
-            list.innerHTML = '<div style="color:#555;font-size:0.8rem;">No setlist presets yet</div>';
-            return;
-        }
-        for (const [trackId, preset] of entries) {
-            const div = document.createElement('div');
-            div.className = 'dj-row';
-            const label = document.createElement('span');
-            label.style.cssText = 'flex:1;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;';
-            label.textContent = trackId;
-            const delBtn = document.createElement('button');
-            delBtn.className = 'dj-btn';
-            delBtn.textContent = 'Unlink';
-            delBtn.addEventListener('click', () => {
-                socket.emit('save_setlist_preset', { track_id: trackId, preset: null });
-                delete state.setlistPresets[trackId];
-                renderSetlistPanel();
-            });
-            div.append(label, delBtn);
-            list.appendChild(div);
-        }
-    }
-
     // ── Latency Panel ──────────────────────────────────────────────────
     document.getElementById('latency-close').addEventListener('click', () => {
         document.getElementById('latency-panel').style.display = 'none';
@@ -2159,9 +1834,6 @@
         }
     }
 
-    // ── Track automation recording ─────────────────────────────────────
-    // During recording, capture control point position relative to Spotify progress
-
     // ── Animation loop ─────────────────────────────────────────────────
 
     const LERP_FACTOR = 0.15;
@@ -2178,20 +1850,24 @@
     function animationLoop() {
         let animating = false;
 
-        // Lerp display volumes toward target volumes
-        for (const id in state.targetVolumes) {
-            const target  = state.targetVolumes[id];
-            const current = state.displayVolumes[id] || 0;
-            if (Math.abs(target - current) > 0.001) {
-                state.displayVolumes[id] = current + (target - current) * LERP_FACTOR;
-                animating = true;
-            } else {
-                state.displayVolumes[id] = target;
-            }
-        }
-        // Also fade out devices that are no longer in targetVolumes
-        for (const id in state.displayVolumes) {
-            if (!(id in state.targetVolumes)) {
+        // Combined lerp pass: volumes + fade-out + audio levels
+        const allIds = new Set([
+            ...Object.keys(state.targetVolumes),
+            ...Object.keys(state.displayVolumes),
+            ...Object.keys(state.audioLevels)
+        ]);
+        for (const id of allIds) {
+            // Volume lerp
+            if (id in state.targetVolumes) {
+                const target = state.targetVolumes[id];
+                const current = state.displayVolumes[id] || 0;
+                if (Math.abs(target - current) > 0.001) {
+                    state.displayVolumes[id] = current + (target - current) * LERP_FACTOR;
+                    animating = true;
+                } else {
+                    state.displayVolumes[id] = target;
+                }
+            } else if (id in state.displayVolumes) {
                 state.displayVolumes[id] *= (1 - LERP_FACTOR);
                 if (state.displayVolumes[id] < 0.001) {
                     delete state.displayVolumes[id];
@@ -2201,19 +1877,18 @@
                     animating = true;
                 }
             }
-        }
-
-        // Lerp audio levels
-        for (const id in state.audioLevels) {
-            const target = state.audioLevels[id];
-            const current = state.displayLevels[id] || 0;
-            if (target > current) {
-                state.displayLevels[id] = target;
-                animating = true;
-            } else {
-                const newVal = current + (target - current) * LERP_FACTOR;
-                if (Math.abs(newVal - current) > 0.001) animating = true;
-                state.displayLevels[id] = newVal;
+            // Level lerp
+            if (id in state.audioLevels) {
+                const target = state.audioLevels[id];
+                const current = state.displayLevels[id] || 0;
+                if (target > current) {
+                    state.displayLevels[id] = target;
+                    animating = true;
+                } else {
+                    const newVal = current + (target - current) * LERP_FACTOR;
+                    if (Math.abs(newVal - current) > 0.001) animating = true;
+                    state.displayLevels[id] = newVal;
+                }
             }
         }
 
@@ -2234,67 +1909,69 @@
             animating = true;
         }
 
-        // Automation recording — capture positions during Spotify playback
-        if (state.automationRecording && spotifyPlaying && spotifyDurationMs > 0) {
-            const elapsed = Date.now() - spotifyLastUpdate;
-            const current = Math.min(spotifyProgressMs + elapsed, spotifyDurationMs);
-            const pct = current / spotifyDurationMs;
-            // Record at ~2Hz
-            const lastKf = state.automationKFs[state.automationKFs.length - 1];
-            if (!lastKf || Math.abs(pct - lastKf.pct) > 0.005) {
-                state.automationKFs.push({
-                    pct: pct,
-                    x: state.controlPoint.x,
-                    y: state.controlPoint.y
-                });
-            }
-        }
-
-        // Update automation playhead (skip if panel hidden)
-        if (spotifyDurationMs > 0
-            && document.getElementById('automation-panel').style.display !== 'none') {
-            const elapsed = spotifyPlaying ? Date.now() - spotifyLastUpdate : 0;
-            const current = Math.min(spotifyProgressMs + elapsed, spotifyDurationMs);
-            const pct = (current / spotifyDurationMs) * 100;
-            autoPlayhead.style.left = pct + '%';
-        }
-
-        // Auto-bounce — move control point between speakers
+        // Auto-bounce — customizable patterns
         if (state.autoBounce !== 'off' && !state.isDragging) {
             const n = state.devices.length;
             if (n >= 2) {
-                const now = performance.now() / 1000; // seconds
+                const now = performance.now() / 1000;
+                const speed = state.bounceSpeed;
+                const radius = state.bounceRadius * RING_RADIUS;
+                let targetX, targetY;
 
-                if (state.autoBounce === 'smooth') {
-                    // Smooth sine oscillation — period ~4s, traces circular path through devices
-                    const period = 4.0;
-                    const t = (now % period) / period;           // 0..1 repeating
-                    const angle = t * 2 * Math.PI - Math.PI / 2; // full circle
-                    const targetX = CENTER + RING_RADIUS * 0.75 * Math.cos(angle);
-                    const targetY = CENTER + RING_RADIUS * 0.75 * Math.sin(angle);
-                    state.controlPoint.x += (targetX - state.controlPoint.x) * 0.08;
-                    state.controlPoint.y += (targetY - state.controlPoint.y) * 0.08;
+                if (state.bouncePattern === 'circle') {
+                    const period = 4.0 / speed;
+                    const t = (now % period) / period;
+                    const angle = t * 2 * Math.PI - Math.PI / 2;
+                    targetX = CENTER + radius * Math.cos(angle);
+                    targetY = CENTER + radius * Math.sin(angle);
 
-                } else if (state.autoBounce === 'beat') {
-                    // Beat-synced — snap to next device on each beat
-                    const bps = state.bounceBPM / 60;
-                    const beatPhase = (now * bps) % n;  // 0..n repeating
+                } else if (state.bouncePattern === 'figure-8') {
+                    const period = 6.0 / speed;
+                    const t = (now % period) / period;
+                    const angle = t * 2 * Math.PI;
+                    targetX = CENTER + radius * Math.cos(angle);
+                    targetY = CENTER + radius * 0.5 * Math.sin(2 * angle);
+
+                } else if (state.bouncePattern === 'ping-pong') {
+                    const period = 2.0 / speed;
+                    const t = (now % period) / period;
+                    const posA = devicePosition(0, n);
+                    const posB = devicePosition(Math.floor(n / 2), n);
+                    const frac = t < 0.5 ? t * 2 : 2 - t * 2;
+                    const ease = frac * frac * (3 - 2 * frac);
+                    targetX = posA.x + (posB.x - posA.x) * ease;
+                    targetY = posA.y + (posB.y - posA.y) * ease;
+
+                } else if (state.bouncePattern === 'random-wander') {
+                    const s1 = Math.sin(now * 0.7 * speed) * 0.6;
+                    const s2 = Math.sin(now * 1.3 * speed + 2.1) * 0.3;
+                    const s3 = Math.sin(now * 0.4 * speed + 4.7) * 0.1;
+                    const c1 = Math.cos(now * 0.5 * speed + 1.3) * 0.6;
+                    const c2 = Math.cos(now * 1.1 * speed + 3.5) * 0.3;
+                    const c3 = Math.cos(now * 0.3 * speed + 5.2) * 0.1;
+                    targetX = CENTER + radius * (s1 + s2 + s3);
+                    targetY = CENTER + radius * (c1 + c2 + c3);
+
+                } else if (state.bouncePattern === 'beat-snap') {
+                    const bps = state.bounceBPM / 60 * speed;
+                    const beatPhase = (now * bps) % n;
                     const beatIndex = Math.floor(beatPhase);
                     const beatFrac = beatPhase - beatIndex;
                     const nextIndex = (beatIndex + 1) % n;
-
                     const posA = devicePosition(beatIndex, n);
                     const posB = devicePosition(nextIndex, n);
-                    // Smooth ease between devices within each beat
-                    const ease = beatFrac * beatFrac * (3 - 2 * beatFrac); // smoothstep
-                    const targetX = posA.x + (posB.x - posA.x) * ease;
-                    const targetY = posA.y + (posB.y - posA.y) * ease;
-                    state.controlPoint.x += (targetX - state.controlPoint.x) * 0.15;
-                    state.controlPoint.y += (targetY - state.controlPoint.y) * 0.15;
+                    const ease = beatFrac * beatFrac * (3 - 2 * beatFrac);
+                    targetX = posA.x + (posB.x - posA.x) * ease;
+                    targetY = posA.y + (posB.y - posA.y) * ease;
                 }
 
-                updateVolumes();
-                animating = true;
+                if (targetX !== undefined) {
+                    const lerpRate = state.bouncePattern === 'beat-snap' ? 0.15 : 0.08;
+                    state.controlPoint.x += (targetX - state.controlPoint.x) * lerpRate;
+                    state.controlPoint.y += (targetY - state.controlPoint.y) * lerpRate;
+                    updateVolumes();
+                    animating = true;
+                }
             }
         }
 
@@ -2333,15 +2010,9 @@
     // No polling intervals needed — WebSocket push handles updates.
     // HTTP fallback polling is started automatically if WS disconnects.
 
-    // Load MIDI devices on first DJ panel open
-    let midiLoaded = false;
-    const origDjClick = btnDJ.onclick;
     btnDJ.addEventListener('click', () => {
-        if (!midiLoaded) { midiLoaded = true; loadMidiDevices(); }
         updateCuePanel();
         updateLatencyPanel();
-        renderSetlistPanel();
-        renderAutomationTimeline();
     });
 
     // Start the continuous animation loop.

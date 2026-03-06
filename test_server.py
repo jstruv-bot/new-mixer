@@ -273,33 +273,6 @@ class TestSpotifyEndpoints:
         resp = client.post('/api/spotify/seek', json={'position_ms': 0})
         assert resp.status_code == 401
 
-    def test_spotify_audio_features(self, client):
-        server_module._spotify_token = {
-            'access_token': 'fake',
-            'refresh_token': 'fake-refresh',
-            'expires_at': time.time() + 3600
-        }
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {'tempo': 128.5}
-        with patch('server.http_requests.get', return_value=mock_resp):
-            resp = client.get('/api/spotify/audio-features/abc123')
-            data = resp.get_json()
-            assert data['tempo'] == 128.5
-
-    def test_spotify_audio_features_fallback(self, client):
-        server_module._spotify_token = {
-            'access_token': 'fake',
-            'refresh_token': 'fake-refresh',
-            'expires_at': time.time() + 3600
-        }
-        mock_resp = MagicMock()
-        mock_resp.status_code = 404
-        with patch('server.http_requests.get', return_value=mock_resp):
-            resp = client.get('/api/spotify/audio-features/bad_id')
-            data = resp.get_json()
-            assert data['tempo'] == 120  # fallback BPM
-
     def test_set_client_id(self, client):
         resp = client.post('/api/spotify/client-id',
                            json={'client_id': 'test-id-123'})
@@ -505,31 +478,6 @@ class TestDelayCompensation:
 # ---------------------------------------------------------------------------
 
 
-class TestEffects:
-    """BPM-synced effects tests."""
-
-    def test_set_effect_via_ws(self, socketio_client):
-        with patch.object(server_module.audio_router, 'set_effect') as mock:
-            socketio_client.emit('set_effect', {
-                'device_id': 'd1', 'type': 'tremolo',
-                'rate_hz': 2.0, 'depth': 0.5
-            })
-            mock.assert_called_with('d1', 'tremolo', 2.0, 0.5)
-
-    def test_set_effect_off(self):
-        server_module.audio_router.set_effect('d1', 'tremolo', 2.0, 0.5)
-        with server_module.audio_router._lock:
-            assert 'd1' in server_module.audio_router._effects
-        server_module.audio_router.set_effect('d1', 'off')
-        with server_module.audio_router._lock:
-            assert 'd1' not in server_module.audio_router._effects
-
-    def test_effect_depth_clamping(self):
-        server_module.audio_router.set_effect('d1', 'tremolo', 2.0, 5.0)
-        with server_module.audio_router._lock:
-            assert server_module.audio_router._effects['d1']['depth'] == 1.0
-
-
 # ---------------------------------------------------------------------------
 # TestLatency
 # ---------------------------------------------------------------------------
@@ -615,114 +563,41 @@ class TestCueChannel:
 
 
 # ---------------------------------------------------------------------------
-# TestSetlistPresets
+# TestMaxVolume
 # ---------------------------------------------------------------------------
 
 
-class TestSetlistPresets:
-    """Setlist-linked preset tests."""
+class TestMaxVolume:
+    """Speaker volume lock / max volume tests."""
 
-    def test_save_setlist_preset(self, socketio_client):
-        preset = {'controlPoint': {'x': 100, 'y': 200}, 'curveType': 'linear'}
-        socketio_client.emit('save_setlist_preset', {
-            'track_id': 'track123', 'preset': preset
+    def test_max_volume_clamp(self):
+        with server_module._state_lock:
+            server_module._max_volumes['d1'] = 0.5
+        server_module.audio_router.set_volume('d1', 0.8)
+        with server_module.audio_router._lock:
+            assert server_module.audio_router._volumes['d1'] <= 0.5
+        # Cleanup
+        with server_module._state_lock:
+            server_module._max_volumes.pop('d1', None)
+
+    def test_set_max_volume_via_ws(self, socketio_client):
+        socketio_client.emit('set_max_volume', {
+            'device_id': 'd1', 'max_volume': 0.6
         })
         with server_module._state_lock:
-            assert 'track123' in server_module._setlist_presets
-            assert server_module._setlist_presets['track123']['curveType'] == 'linear'
-
-    def test_remove_setlist_preset(self, socketio_client):
+            assert server_module._max_volumes.get('d1') == 0.6
+        # Cleanup
         with server_module._state_lock:
-            server_module._setlist_presets['track123'] = {'x': 1}
-        socketio_client.emit('save_setlist_preset', {
-            'track_id': 'track123', 'preset': None
+            server_module._max_volumes.pop('d1', None)
+
+    def test_max_volume_zero_means_unlimited(self, socketio_client):
+        with server_module._state_lock:
+            server_module._max_volumes['d1'] = 0.5
+        socketio_client.emit('set_max_volume', {
+            'device_id': 'd1', 'max_volume': 0
         })
         with server_module._state_lock:
-            assert 'track123' not in server_module._setlist_presets
-
-    def test_setlist_presets_rest(self, client):
-        with server_module._state_lock:
-            server_module._setlist_presets['abc'] = {'x': 1}
-        resp = client.get('/api/setlist-presets')
-        assert resp.status_code == 200
-        assert 'abc' in resp.get_json()
-
-
-# ---------------------------------------------------------------------------
-# TestAutomation
-# ---------------------------------------------------------------------------
-
-
-class TestAutomation:
-    """Crossfade automation tests."""
-
-    def test_set_automation(self, socketio_client):
-        kfs = [{'pct': 0.0, 'x': 100, 'y': 100}, {'pct': 1.0, 'x': 400, 'y': 400}]
-        socketio_client.emit('set_automation', {
-            'keyframes': kfs, 'active': True
-        })
-        with server_module._state_lock:
-            assert len(server_module._automation_keyframes) == 2
-            assert server_module._automation_active is True
-
-    def test_automation_rest(self, client):
-        resp = client.get('/api/automation')
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert 'keyframes' in data
-        assert 'active' in data
-
-    def test_interpolate_keyframes(self):
-        kfs = [{'pct': 0.0, 'x': 100, 'y': 100}, {'pct': 1.0, 'x': 400, 'y': 400}]
-        pos = server_module._interpolate_keyframes(kfs, 0.5)
-        assert pos is not None
-        assert abs(pos['x'] - 250) < 1
-        assert abs(pos['y'] - 250) < 1
-
-    def test_interpolate_keyframes_empty(self):
-        assert server_module._interpolate_keyframes([], 0.5) is None
-
-    def test_interpolate_keyframes_edge(self):
-        kfs = [{'pct': 0.2, 'x': 100, 'y': 100}, {'pct': 0.8, 'x': 400, 'y': 400}]
-        # Before first keyframe
-        pos = server_module._interpolate_keyframes(kfs, 0.0)
-        assert pos['x'] == 100
-        # After last keyframe
-        pos = server_module._interpolate_keyframes(kfs, 1.0)
-        assert pos['x'] == 400
-
-
-# ---------------------------------------------------------------------------
-# TestMIDI
-# ---------------------------------------------------------------------------
-
-
-class TestMIDI:
-    """MIDI controller tests."""
-
-    def test_midi_devices_endpoint(self, client):
-        resp = client.get('/api/midi/devices')
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert 'available' in data
-        assert 'devices' in data
-
-    def test_set_midi_mapping(self, socketio_client):
-        socketio_client.emit('set_midi_mapping', {
-            'cc': 7, 'target': 'volume', 'device_id': 'd1'
-        })
-        with server_module._state_lock:
-            assert 7 in server_module._midi_mappings
-            assert server_module._midi_mappings[7]['target'] == 'volume'
-
-    def test_remove_midi_mapping(self, socketio_client):
-        with server_module._state_lock:
-            server_module._midi_mappings[7] = {'target': 'volume'}
-        socketio_client.emit('set_midi_mapping', {
-            'cc': 7, 'target': None
-        })
-        with server_module._state_lock:
-            assert 7 not in server_module._midi_mappings
+            assert 'd1' not in server_module._max_volumes
 
 
 # ---------------------------------------------------------------------------
