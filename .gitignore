@@ -1,7 +1,8 @@
 __pycache__/
 *.pyc
 build/
-dist/
+dist/*
+!dist/BluetoothCrossfadeMixer.exe
 *.spec
 .pytest_cache/
 .claude/
