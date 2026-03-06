@@ -30,6 +30,11 @@ cmd = [
     "--console",
     "--name", "BluetoothCrossfadeMixer",
     "--add-data", "templates;templates",
+    # Socket.IO/Engine.IO async drivers not auto-detected by PyInstaller
+    "--hidden-import", "engineio.async_drivers.threading",
+    "--hidden-import", "socketio",
+    "--hidden-import", "engineio",
+    "--hidden-import", "simple_websocket",
 ]
 
 if pyaudio_dll:
