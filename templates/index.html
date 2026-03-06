@@ -846,19 +846,20 @@
         const n = state.devices.length;
         if (n === 0) return;
 
-        const weights = [];
-
-        // 1. Compute weights using the selected curve
+        // 1. Compute weights using the selected curve (with inline max tracking)
+        let maxWeight = 0;
+        const weights = new Array(n);
         for (let i = 0; i < n; i++) {
-            const pos  = devicePosition(i, n);
-            const dx   = state.controlPoint.x - pos.x;
-            const dy   = state.controlPoint.y - pos.y;
+            const pos = devicePosition(i, n);
+            const dx = state.controlPoint.x - pos.x;
+            const dy = state.controlPoint.y - pos.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            weights.push(computeWeight(dist, state.curveType));
+            const w = computeWeight(dist, state.curveType);
+            weights[i] = w;
+            if (w > maxWeight) maxWeight = w;
         }
 
         // 2. Normalize so the max weight becomes 1.0, enforce per-device min volume
-        const maxWeight = Math.max(...weights);
         for (let i = 0; i < n; i++) {
             const did = state.devices[i].id;
             let vol = maxWeight > 0 ? weights[i] / maxWeight : 0;
@@ -901,6 +902,13 @@
 
     // ── Drawing ───────────────────────────────────────────────────────
 
+    const _ringGlow = (() => {
+        const g = ctx.createRadialGradient(CENTER, CENTER, RING_RADIUS - 40, CENTER, CENTER, RING_RADIUS + 10);
+        g.addColorStop(0, "rgba(0, 212, 255, 0.0)");
+        g.addColorStop(1, "rgba(0, 212, 255, 0.04)");
+        return g;
+    })();
+
     /**
      * Main render function.  Clears the canvas and redraws everything:
      *   1. Background
@@ -922,16 +930,10 @@
         ctx.lineWidth   = 1;
         ctx.stroke();
 
-        // Inner subtle radial glow
-        const ringGlow = ctx.createRadialGradient(
-            CENTER, CENTER, RING_RADIUS - 40,
-            CENTER, CENTER, RING_RADIUS + 10
-        );
-        ringGlow.addColorStop(0, "rgba(0, 212, 255, 0.0)");
-        ringGlow.addColorStop(1, "rgba(0, 212, 255, 0.04)");
+        // Inner subtle radial glow (cached gradient)
         ctx.beginPath();
         ctx.arc(CENTER, CENTER, RING_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = ringGlow;
+        ctx.fillStyle = _ringGlow;
         ctx.fill();
 
         const n = state.devices.length;
@@ -1699,20 +1701,24 @@
     function animationLoop() {
         let animating = false;
 
-        // Lerp display volumes toward target volumes
-        for (const id in state.targetVolumes) {
-            const target  = state.targetVolumes[id];
-            const current = state.displayVolumes[id] || 0;
-            if (Math.abs(target - current) > 0.001) {
-                state.displayVolumes[id] = current + (target - current) * LERP_FACTOR;
-                animating = true;
-            } else {
-                state.displayVolumes[id] = target;
-            }
-        }
-        // Also fade out devices that are no longer in targetVolumes
-        for (const id in state.displayVolumes) {
-            if (!(id in state.targetVolumes)) {
+        // Combined lerp pass: volumes + fade-out + audio levels
+        const allIds = new Set([
+            ...Object.keys(state.targetVolumes),
+            ...Object.keys(state.displayVolumes),
+            ...Object.keys(state.audioLevels)
+        ]);
+        for (const id of allIds) {
+            // Volume lerp
+            if (id in state.targetVolumes) {
+                const target = state.targetVolumes[id];
+                const current = state.displayVolumes[id] || 0;
+                if (Math.abs(target - current) > 0.001) {
+                    state.displayVolumes[id] = current + (target - current) * LERP_FACTOR;
+                    animating = true;
+                } else {
+                    state.displayVolumes[id] = target;
+                }
+            } else if (id in state.displayVolumes) {
                 state.displayVolumes[id] *= (1 - LERP_FACTOR);
                 if (state.displayVolumes[id] < 0.001) {
                     delete state.displayVolumes[id];
@@ -1722,19 +1728,18 @@
                     animating = true;
                 }
             }
-        }
-
-        // Lerp audio levels
-        for (const id in state.audioLevels) {
-            const target = state.audioLevels[id];
-            const current = state.displayLevels[id] || 0;
-            if (target > current) {
-                state.displayLevels[id] = target;
-                animating = true;
-            } else {
-                const newVal = current + (target - current) * LERP_FACTOR;
-                if (Math.abs(newVal - current) > 0.001) animating = true;
-                state.displayLevels[id] = newVal;
+            // Level lerp
+            if (id in state.audioLevels) {
+                const target = state.audioLevels[id];
+                const current = state.displayLevels[id] || 0;
+                if (target > current) {
+                    state.displayLevels[id] = target;
+                    animating = true;
+                } else {
+                    const newVal = current + (target - current) * LERP_FACTOR;
+                    if (Math.abs(newVal - current) > 0.001) animating = true;
+                    state.displayLevels[id] = newVal;
+                }
             }
         }
 
