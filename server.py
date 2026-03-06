@@ -6,6 +6,7 @@ Flask API + pycaw device enumeration + WASAPI loopback audio routing.
 import sys
 import os
 import math
+import warnings
 import webbrowser
 import threading
 import time
@@ -13,6 +14,9 @@ import queue
 import hashlib
 import base64
 import secrets
+
+# Suppress noisy pycaw COMError warnings from non-Bluetooth devices
+warnings.filterwarnings("ignore", message="COMError attempting to get property")
 
 from flask import Flask, render_template, jsonify, request, redirect
 from flask_socketio import SocketIO, emit
