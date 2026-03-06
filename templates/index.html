@@ -231,6 +231,17 @@
         .dj-btn:hover { background: rgba(0, 212, 255, 0.18); }
         .dj-btn.active { border-color: #1ed760; color: #1ed760; background: rgba(30, 215, 96, 0.12); }
 
+        .bounce-settings {
+            display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+            padding: 0.4rem 0.8rem; margin-top: 0.3rem;
+            background: rgba(30, 215, 96, 0.06); border: 1px solid rgba(30, 215, 96, 0.15);
+            border-radius: 6px; font-size: 0.75rem; color: #aaa;
+        }
+        .bounce-settings.active { display: flex; }
+        .bounce-settings label { white-space: nowrap; min-width: 45px; }
+        .bounce-settings input[type=range] { width: 70px; height: 14px; accent-color: #1ed760; }
+        .bounce-settings .val { min-width: 32px; color: #1ed760; font-size: 0.7rem; }
+
         /* Latency badges */
         .latency-badge {
             position: absolute; font-size: 0.65rem; color: #8888aa;
@@ -273,6 +284,19 @@
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
         <button id="btn-dj" type="button" title="DJ features menu">DJ</button>
         <button id="btn-refresh" type="button">Refresh Devices</button>
+    </div>
+
+    <div id="bounce-settings" class="bounce-settings">
+        <label>Pattern:</label>
+        <button id="bounce-pattern-btn" class="dj-btn" type="button" style="font-size:0.7rem;padding:2px 8px;">circle</button>
+        <label>Speed:</label>
+        <input type="range" id="bounce-speed" min="50" max="400" value="100" step="10">
+        <span id="bounce-speed-val" class="val">1.0x</span>
+        <label>Radius:</label>
+        <input type="range" id="bounce-radius" min="20" max="100" value="75" step="5">
+        <span id="bounce-radius-val" class="val">75%</span>
+        <label>BPM:</label>
+        <input type="number" id="bounce-bpm" min="40" max="300" value="120" step="1" style="width:50px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;text-align:center;font-size:0.75rem;">
     </div>
 
     <div class="preset-bar">
@@ -424,7 +448,10 @@
         presetAnimating: false,
         presetAnimTarget: null,
         autoBounce:     'off',   // 'off' | 'smooth' | 'beat'
-        bounceBPM:      120,     // current track BPM
+        bounceSpeed:    parseFloat(localStorage.getItem('mixer-bounce-speed') || '1.0'),
+        bounceRadius:   parseFloat(localStorage.getItem('mixer-bounce-radius') || '0.75'),
+        bouncePattern:  localStorage.getItem('mixer-bounce-pattern') || 'circle',
+        bounceBPM:      parseInt(localStorage.getItem('mixer-bounce-bpm') || '120'),
         // Auto-DJ: energy-reactive crossfading
         autoDJ:         false,
         djPrimarySpeaker: 0,     // index of current "home" speaker
@@ -1158,25 +1185,60 @@
         updateVolumes();
     });
 
-    // ── Auto-bounce toggle ──────────────────────────────────────────────
+    // ── Bounce settings ─────────────────────────────────────────────
     const btnBounce = document.getElementById('btn-bounce');
-    const bounceModes = ['off', 'smooth', 'beat'];
-    const bounceLabels = { off: 'Bounce: Off', smooth: 'Bounce: Smooth', beat: 'Bounce: Beat' };
+    const bounceSettings = document.getElementById('bounce-settings');
+    const bouncePatterns = ['circle', 'figure-8', 'ping-pong', 'random-wander', 'beat-snap'];
+    const bouncePatternBtn = document.getElementById('bounce-pattern-btn');
+    const bounceSpeedSlider = document.getElementById('bounce-speed');
+    const bounceRadiusSlider = document.getElementById('bounce-radius');
+    const bounceBpmInput = document.getElementById('bounce-bpm');
+
+    // Init UI from state
+    bouncePatternBtn.textContent = state.bouncePattern;
+    bounceSpeedSlider.value = Math.round(state.bounceSpeed * 100);
+    document.getElementById('bounce-speed-val').textContent = state.bounceSpeed.toFixed(1) + 'x';
+    bounceRadiusSlider.value = Math.round(state.bounceRadius * 100);
+    document.getElementById('bounce-radius-val').textContent = Math.round(state.bounceRadius * 100) + '%';
+    bounceBpmInput.value = state.bounceBPM;
 
     btnBounce.addEventListener('click', () => {
-        const idx = (bounceModes.indexOf(state.autoBounce) + 1) % bounceModes.length;
-        state.autoBounce = bounceModes[idx];
-        btnBounce.textContent = bounceLabels[state.autoBounce];
-        btnBounce.style.borderColor = state.autoBounce !== 'off'
-            ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        state.autoBounce = state.autoBounce === 'off' ? 'on' : 'off';
+        btnBounce.textContent = state.autoBounce !== 'off' ? 'Bounce: On' : 'Bounce: Off';
+        btnBounce.style.borderColor = state.autoBounce !== 'off' ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
         btnBounce.style.color = state.autoBounce !== 'off' ? '#1ed760' : '#00d4ff';
-        // Disable Auto-DJ when bounce is activated (they'd conflict)
+        bounceSettings.classList.toggle('active', state.autoBounce !== 'off');
         if (state.autoBounce !== 'off' && state.autoDJ) {
             state.autoDJ = false;
             document.getElementById('btn-autodj').textContent = 'Auto-DJ: Off';
             document.getElementById('btn-autodj').style.borderColor = 'rgba(0, 212, 255, 0.3)';
             document.getElementById('btn-autodj').style.color = '#00d4ff';
         }
+    });
+
+    bouncePatternBtn.addEventListener('click', () => {
+        const idx = (bouncePatterns.indexOf(state.bouncePattern) + 1) % bouncePatterns.length;
+        state.bouncePattern = bouncePatterns[idx];
+        bouncePatternBtn.textContent = state.bouncePattern;
+        localStorage.setItem('mixer-bounce-pattern', state.bouncePattern);
+    });
+
+    bounceSpeedSlider.addEventListener('input', () => {
+        state.bounceSpeed = parseInt(bounceSpeedSlider.value) / 100;
+        document.getElementById('bounce-speed-val').textContent = state.bounceSpeed.toFixed(1) + 'x';
+        localStorage.setItem('mixer-bounce-speed', state.bounceSpeed);
+    });
+
+    bounceRadiusSlider.addEventListener('input', () => {
+        state.bounceRadius = parseInt(bounceRadiusSlider.value) / 100;
+        document.getElementById('bounce-radius-val').textContent = Math.round(state.bounceRadius * 100) + '%';
+        localStorage.setItem('mixer-bounce-radius', state.bounceRadius);
+    });
+
+    bounceBpmInput.addEventListener('change', () => {
+        state.bounceBPM = Math.max(40, Math.min(300, parseInt(bounceBpmInput.value) || 120));
+        bounceBpmInput.value = state.bounceBPM;
+        localStorage.setItem('mixer-bounce-bpm', state.bounceBPM);
     });
 
     // ── Auto-DJ toggle ──────────────────────────────────────────────────
@@ -1190,9 +1252,10 @@
         // Disable auto-bounce when Auto-DJ is on (they'd conflict)
         if (state.autoDJ && state.autoBounce !== 'off') {
             state.autoBounce = 'off';
-            btnBounce.textContent = bounceLabels['off'];
+            btnBounce.textContent = 'Bounce: Off';
             btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
             btnBounce.style.color = '#00d4ff';
+            bounceSettings.classList.remove('active');
         }
     });
 
@@ -1760,42 +1823,69 @@
             animating = true;
         }
 
-        // Auto-bounce — move control point between speakers
+        // Auto-bounce — customizable patterns
         if (state.autoBounce !== 'off' && !state.isDragging) {
             const n = state.devices.length;
             if (n >= 2) {
-                const now = performance.now() / 1000; // seconds
+                const now = performance.now() / 1000;
+                const speed = state.bounceSpeed;
+                const radius = state.bounceRadius * RING_RADIUS;
+                let targetX, targetY;
 
-                if (state.autoBounce === 'smooth') {
-                    // Smooth sine oscillation — period ~4s, traces circular path through devices
-                    const period = 4.0;
-                    const t = (now % period) / period;           // 0..1 repeating
-                    const angle = t * 2 * Math.PI - Math.PI / 2; // full circle
-                    const targetX = CENTER + RING_RADIUS * 0.75 * Math.cos(angle);
-                    const targetY = CENTER + RING_RADIUS * 0.75 * Math.sin(angle);
-                    state.controlPoint.x += (targetX - state.controlPoint.x) * 0.08;
-                    state.controlPoint.y += (targetY - state.controlPoint.y) * 0.08;
+                if (state.bouncePattern === 'circle') {
+                    const period = 4.0 / speed;
+                    const t = (now % period) / period;
+                    const angle = t * 2 * Math.PI - Math.PI / 2;
+                    targetX = CENTER + radius * Math.cos(angle);
+                    targetY = CENTER + radius * Math.sin(angle);
 
-                } else if (state.autoBounce === 'beat') {
-                    // Beat-synced — snap to next device on each beat
-                    const bps = state.bounceBPM / 60;
-                    const beatPhase = (now * bps) % n;  // 0..n repeating
+                } else if (state.bouncePattern === 'figure-8') {
+                    const period = 6.0 / speed;
+                    const t = (now % period) / period;
+                    const angle = t * 2 * Math.PI;
+                    targetX = CENTER + radius * Math.cos(angle);
+                    targetY = CENTER + radius * 0.5 * Math.sin(2 * angle);
+
+                } else if (state.bouncePattern === 'ping-pong') {
+                    const period = 2.0 / speed;
+                    const t = (now % period) / period;
+                    const posA = devicePosition(0, n);
+                    const posB = devicePosition(Math.floor(n / 2), n);
+                    const frac = t < 0.5 ? t * 2 : 2 - t * 2;
+                    const ease = frac * frac * (3 - 2 * frac);
+                    targetX = posA.x + (posB.x - posA.x) * ease;
+                    targetY = posA.y + (posB.y - posA.y) * ease;
+
+                } else if (state.bouncePattern === 'random-wander') {
+                    const s1 = Math.sin(now * 0.7 * speed) * 0.6;
+                    const s2 = Math.sin(now * 1.3 * speed + 2.1) * 0.3;
+                    const s3 = Math.sin(now * 0.4 * speed + 4.7) * 0.1;
+                    const c1 = Math.cos(now * 0.5 * speed + 1.3) * 0.6;
+                    const c2 = Math.cos(now * 1.1 * speed + 3.5) * 0.3;
+                    const c3 = Math.cos(now * 0.3 * speed + 5.2) * 0.1;
+                    targetX = CENTER + radius * (s1 + s2 + s3);
+                    targetY = CENTER + radius * (c1 + c2 + c3);
+
+                } else if (state.bouncePattern === 'beat-snap') {
+                    const bps = state.bounceBPM / 60 * speed;
+                    const beatPhase = (now * bps) % n;
                     const beatIndex = Math.floor(beatPhase);
                     const beatFrac = beatPhase - beatIndex;
                     const nextIndex = (beatIndex + 1) % n;
-
                     const posA = devicePosition(beatIndex, n);
                     const posB = devicePosition(nextIndex, n);
-                    // Smooth ease between devices within each beat
-                    const ease = beatFrac * beatFrac * (3 - 2 * beatFrac); // smoothstep
-                    const targetX = posA.x + (posB.x - posA.x) * ease;
-                    const targetY = posA.y + (posB.y - posA.y) * ease;
-                    state.controlPoint.x += (targetX - state.controlPoint.x) * 0.15;
-                    state.controlPoint.y += (targetY - state.controlPoint.y) * 0.15;
+                    const ease = beatFrac * beatFrac * (3 - 2 * beatFrac);
+                    targetX = posA.x + (posB.x - posA.x) * ease;
+                    targetY = posA.y + (posB.y - posA.y) * ease;
                 }
 
-                updateVolumes();
-                animating = true;
+                if (targetX !== undefined) {
+                    const lerpRate = state.bouncePattern === 'beat-snap' ? 0.15 : 0.08;
+                    state.controlPoint.x += (targetX - state.controlPoint.x) * lerpRate;
+                    state.controlPoint.y += (targetY - state.controlPoint.y) * lerpRate;
+                    updateVolumes();
+                    animating = true;
+                }
             }
         }
 
