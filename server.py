@@ -265,6 +265,7 @@ class AudioRouter:
         self._source_endpoint = None    # IAudioEndpointVolume of source device
         self._source_prev_vol = 1.0     # original volume to restore
         self._source_boost = 1.0        # capture boost to compensate for lowered source vol
+        self._energy_level = 0.0        # real-time RMS energy (0.0-1.0), updated by capture thread
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -518,6 +519,11 @@ class AudioRouter:
     def active_outputs(self):
         return len(self._device_index_map)
 
+    @property
+    def energy_level(self):
+        """Current audio energy level (0.0-1.0), updated by capture thread."""
+        return self._energy_level
+
     @staticmethod
     def _compute_biquad_low_shelf(freq, sample_rate, gain_db):
         """Compute biquad low-shelf filter coefficients."""
@@ -720,6 +726,14 @@ class AudioRouter:
                     audio = np.frombuffer(data, dtype=self.NUMPY_DTYPE).copy()
                     audio = (audio * boost).clip(-32768, 32767).astype(self.NUMPY_DTYPE)
                     data = audio.tobytes()
+
+                # Compute RMS energy for Auto-DJ (exponential moving average)
+                samples = np.frombuffer(data, dtype=self.NUMPY_DTYPE)
+                rms = float(np.sqrt(np.mean(samples * samples)))
+                # Normalize: float32 audio peaks at ~1.0, clamp for safety
+                rms = min(rms, 1.0)
+                # EMA smoothing (alpha=0.3 balances responsiveness vs stability)
+                self._energy_level = 0.3 * rms + 0.7 * self._energy_level
 
                 # Distribute to all output queues
                 for q in queues:
@@ -1953,6 +1967,7 @@ def _spotify_poller():
                 'progress_ms': progress_ms,
                 'duration_ms': duration_ms,
                 'track_id': track_id,
+                'energy': round(audio_router.energy_level, 3),
             })
             # Setlist preset matching — only emit once per track change
             if track_id and track_id != last_setlist_track:
@@ -1996,6 +2011,18 @@ def _interpolate_keyframes(keyframes, pct):
                     keyframes[i + 1].get('y', 250) - keyframes[i].get('y', 250)),
             }
     return None
+
+
+def _energy_emitter():
+    """Background thread: emits audio energy at ~10Hz for Auto-DJ."""
+    while not _shutdown_event.is_set():
+        _shutdown_event.wait(timeout=0.1)  # ~10Hz
+        if _shutdown_event.is_set():
+            break
+        if audio_router.is_running:
+            socketio.emit('audio_energy', {
+                'energy': round(audio_router.energy_level, 3)
+            })
 
 
 # ---------------------------------------------------------------------------
@@ -2046,8 +2073,9 @@ if __name__ == "__main__":
     else:
         print("[Spotify] No saved session — click Connect Spotify to authenticate")
 
-    # Start Spotify poller
+    # Start Spotify poller and energy emitter
     threading.Thread(target=_spotify_poller, daemon=True).start()
+    threading.Thread(target=_energy_emitter, daemon=True).start()
 
     # Open the browser after a short delay so the server is ready.
     threading.Timer(1.5, lambda: webbrowser.open(url)).start()

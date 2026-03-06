@@ -864,3 +864,20 @@ class TestMinVolume:
         # Should not crash with missing fields
         socketio_client.emit('set_min_volume', {})
         socketio_client.emit('set_min_volume', {'device_id': 'd1'})
+
+
+# ---------------------------------------------------------------------------
+# TestAutoDJEnergy
+# ---------------------------------------------------------------------------
+
+
+class TestAutoDJEnergy:
+    """Auto-DJ energy level tests."""
+
+    def test_energy_level_default_zero(self):
+        assert server_module.audio_router.energy_level == 0.0
+
+    def test_energy_level_writable(self):
+        server_module.audio_router._energy_level = 0.75
+        assert abs(server_module.audio_router.energy_level - 0.75) < 0.001
+        server_module.audio_router._energy_level = 0.0

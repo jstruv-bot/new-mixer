@@ -306,6 +306,7 @@
             <option value="equal-power">Equal Power</option>
         </select>
         <button id="btn-bounce" type="button" title="Auto-bounce between speakers">Bounce: Off</button>
+        <button id="btn-autodj" type="button" title="Auto-DJ: energy-reactive crossfading between speakers">Auto-DJ: Off</button>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
         <button id="btn-groups" type="button">Groups</button>
         <button id="btn-dj" type="button" title="DJ features menu">DJ</button>
@@ -554,6 +555,11 @@
         autoBounce:     'off',   // 'off' | 'smooth' | 'beat'
         bounceBPM:      120,     // current track BPM
         bounceTrackId:  '',      // last track we fetched BPM for
+        // Auto-DJ: energy-reactive crossfading
+        autoDJ:         false,
+        djPrimarySpeaker: 0,     // index of current "home" speaker
+        djEnergy:       0,       // smoothed energy level from backend (0-1)
+        djLastTrackId:  '',      // detect track changes for rotation
         // DJ features
         zoneMode:       false,   // true = free 2D placement, false = ring
         zonePositions:  JSON.parse(localStorage.getItem('mixer-zones') || '{}'),
@@ -769,8 +775,23 @@
                     .then(d => { state.bounceBPM = d.tempo || 120; })
                     .catch(() => { state.bounceBPM = 120; });
             }
+            // Auto-DJ: rotate primary speaker on track change
+            if (state.autoDJ && data.track_id && data.track_id !== state.djLastTrackId) {
+                state.djLastTrackId = data.track_id;
+                const n = state.devices.length;
+                if (n > 1) {
+                    state.djPrimarySpeaker = (state.djPrimarySpeaker + 1) % n;
+                }
+            }
         } else {
             spotifyEls.widget.style.display = 'none';
+        }
+    });
+
+    // Audio energy for Auto-DJ
+    socket.on("audio_energy", (data) => {
+        if (state.autoDJ) {
+            state.djEnergy = data.energy || 0;
         }
     });
 
@@ -1381,6 +1402,30 @@
         btnBounce.style.borderColor = state.autoBounce !== 'off'
             ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
         btnBounce.style.color = state.autoBounce !== 'off' ? '#1ed760' : '#00d4ff';
+        // Disable Auto-DJ when bounce is activated (they'd conflict)
+        if (state.autoBounce !== 'off' && state.autoDJ) {
+            state.autoDJ = false;
+            document.getElementById('btn-autodj').textContent = 'Auto-DJ: Off';
+            document.getElementById('btn-autodj').style.borderColor = 'rgba(0, 212, 255, 0.3)';
+            document.getElementById('btn-autodj').style.color = '#00d4ff';
+        }
+    });
+
+    // ── Auto-DJ toggle ──────────────────────────────────────────────────
+    const btnAutoDJ = document.getElementById('btn-autodj');
+    btnAutoDJ.addEventListener('click', () => {
+        state.autoDJ = !state.autoDJ;
+        btnAutoDJ.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
+        btnAutoDJ.style.borderColor = state.autoDJ
+            ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        btnAutoDJ.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
+        // Disable auto-bounce when Auto-DJ is on (they'd conflict)
+        if (state.autoDJ && state.autoBounce !== 'off') {
+            state.autoBounce = 'off';
+            btnBounce.textContent = bounceLabels['off'];
+            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
+            btnBounce.style.color = '#00d4ff';
+        }
     });
 
     // ── Drag event handlers ────────────────────────────────────────────
@@ -1764,6 +1809,7 @@
             curveType: state.curveType,
             mutedDevices: [...state.mutedDevices],
             minVolumes: Object.assign({}, state.minVolumes),
+            autoDJ: state.autoDJ,
         };
         localStorage.setItem('mixer-presets', JSON.stringify(state.presets));
         renderPresetSlots();
@@ -1786,6 +1832,12 @@
             state.minVolumes = Object.assign({}, preset.minVolumes);
             localStorage.setItem('mixer-minvols', JSON.stringify(state.minVolumes));
         }
+        // Restore Auto-DJ state
+        state.autoDJ = !!preset.autoDJ;
+        const adjBtn = document.getElementById('btn-autodj');
+        adjBtn.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
+        adjBtn.style.borderColor = state.autoDJ ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        adjBtn.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
         renderPresetSlots();
         showToast('Preset ' + (index + 1) + ' loaded');
     }
@@ -2378,6 +2430,25 @@
                     state.controlPoint.y += (targetY - state.controlPoint.y) * 0.15;
                 }
 
+                updateVolumes();
+                animating = true;
+            }
+        }
+
+        // Auto-DJ — energy-reactive crossfading between speakers
+        if (state.autoDJ && !state.isDragging) {
+            const n = state.devices.length;
+            if (n >= 2) {
+                // Primary speaker position
+                const primaryPos = devicePosition(state.djPrimarySpeaker, n);
+                // Energy maps control point between primary speaker and center
+                // energy 0 → sit on primary speaker, energy 1 → center (balanced)
+                const energy = state.djEnergy;
+                const targetX = primaryPos.x + (CENTER - primaryPos.x) * energy;
+                const targetY = primaryPos.y + (CENTER - primaryPos.y) * energy;
+                // Smooth lerp (0.05 = ~1 second to settle)
+                state.controlPoint.x += (targetX - state.controlPoint.x) * 0.05;
+                state.controlPoint.y += (targetY - state.controlPoint.y) * 0.05;
                 updateVolumes();
                 animating = true;
             }
