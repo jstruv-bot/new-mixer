@@ -544,9 +544,9 @@ class AudioRouter:
             api_indices[name] = i
 
         preferred_order = [
-            "Windows WASAPI",
-            "Windows DirectSound",
             "MME",
+            "Windows DirectSound",
+            "Windows WASAPI",
         ]
         ordered_apis = [api_indices[n] for n in preferred_order if n in api_indices]
         # Add any remaining host APIs not in our preference list
@@ -669,22 +669,45 @@ class AudioRouter:
         try:
             pa_info = self._pa.get_device_info_by_index(pa_device_index)
             out_channels = min(self._channels, pa_info.get("maxOutputChannels", 2))
+            out_rate = self._sample_rate
+            needs_resample = False
 
-            stream = self._pa.open(
-                format=self.FORMAT,
-                channels=out_channels,
-                rate=self._sample_rate,
-                output=True,
-                output_device_index=pa_device_index,
-                frames_per_buffer=self.CHUNK,
-            )
+            try:
+                stream = self._pa.open(
+                    format=self.FORMAT,
+                    channels=out_channels,
+                    rate=out_rate,
+                    output=True,
+                    output_device_index=pa_device_index,
+                    frames_per_buffer=self.CHUNK,
+                )
+            except Exception:
+                # Device may not support capture sample rate — try native rate
+                native_rate = int(pa_info.get("defaultSampleRate", 44100))
+                if native_rate != out_rate:
+                    print(f"[AudioRouter] Retrying output {pa_device_index} "
+                          f"at native {native_rate}Hz (capture is {out_rate}Hz)")
+                    out_rate = native_rate
+                    needs_resample = True
+                    stream = self._pa.open(
+                        format=self.FORMAT,
+                        channels=out_channels,
+                        rate=out_rate,
+                        output=True,
+                        output_device_index=pa_device_index,
+                        frames_per_buffer=self.CHUNK,
+                    )
+                else:
+                    raise
+
             self._output_streams[device_id] = stream
         except Exception as exc:
             print(f"[AudioRouter] Failed to open output {pa_device_index}: {exc}")
             return
 
         dev_name = pa_info.get("name", str(pa_device_index))
-        print(f"[AudioRouter] Output thread running for '{dev_name}'")
+        print(f"[AudioRouter] Output thread running for '{dev_name}'"
+              f"{' (resampling)' if needs_resample else ''}")
 
         q = self._audio_queues.get(device_id)
         if not q:
@@ -803,6 +826,20 @@ class AudioRouter:
                                 self._effects[device_id]['phase'] = new_phase
 
                 np.clip(audio, -1.0, 1.0, out=audio)
+
+                # Resample if output device runs at a different rate
+                if needs_resample:
+                    frames_in = len(audio) // out_channels
+                    frames_out = int(frames_in * out_rate / self._sample_rate)
+                    if frames_out > 0 and frames_in > 0:
+                        resampled = np.zeros(frames_out * out_channels,
+                                             dtype=self.NUMPY_DTYPE)
+                        for ch in range(out_channels):
+                            src = audio[ch::out_channels]
+                            idx = np.linspace(0, len(src) - 1, frames_out)
+                            resampled[ch::out_channels] = np.interp(
+                                idx, np.arange(len(src)), src)
+                        audio = resampled
 
                 _t0 = time.perf_counter()
                 try:
