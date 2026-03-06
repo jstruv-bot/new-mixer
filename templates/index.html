@@ -284,6 +284,7 @@
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
         <button id="btn-dj" type="button" title="Cue &amp; latency panels">More</button>
         <button id="btn-party" type="button" title="Party Mode: auto-DJ + full stereo separation">Party</button>
+        <button id="btn-viz" type="button" title="Visualizer settings">Viz</button>
         <button id="btn-refresh" type="button">Refresh Devices</button>
     </div>
 
@@ -347,6 +348,53 @@
             <input type="range" id="eq-maxvol" min="0" max="100" value="0" step="5">
             <span id="eq-maxvol-val">Off</span>
         </div>
+    </div>
+
+    <div id="viz-panel" class="eq-panel" style="display:none;">
+        <h3 style="margin:0 0 8px;color:#00d4ff;font-size:0.9rem;">
+            Visualizer
+            <span id="viz-close" style="float:right;cursor:pointer;color:#888;">&times;</span>
+        </h3>
+        <div class="eq-slider-row">
+            <label>Audio</label>
+            <select id="viz-tier" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
+                <option value="0">Energy</option>
+                <option value="1">Spectrum</option>
+                <option value="2">Spectrum + Beat</option>
+            </select>
+        </div>
+        <div class="eq-slider-row">
+            <label>Intensity</label>
+            <input type="range" id="viz-intensity" min="0" max="100" value="60" step="5">
+            <span id="viz-intensity-val">60%</span>
+        </div>
+        <div style="margin:6px 0;font-size:0.75rem;color:#888;">Mixer Effects</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-ring" checked> Spectrum Ring</label>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-orbit" checked> Waveform Orbit</label>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-flash" checked> Beat Flash</label>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-drift" checked> Particle Drift</label>
+        </div>
+        <div style="margin:8px 0 4px;font-size:0.75rem;color:#888;">Fullscreen Mode</div>
+        <div class="eq-slider-row">
+            <select id="viz-fsmode" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
+                <option value="0">Radial Spectrum</option>
+                <option value="1">Particle Nebula</option>
+                <option value="2">Waveform Terrain</option>
+                <option value="3">Geometric Kaleidoscope</option>
+                <option value="4">Frequency Waterfall</option>
+            </select>
+        </div>
+        <div class="eq-slider-row">
+            <label>Theme</label>
+            <select id="viz-theme" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
+                <option value="0">Cyan</option>
+                <option value="1">Sunset</option>
+                <option value="2">Neon</option>
+                <option value="3">Monochrome</option>
+            </select>
+        </div>
+        <button id="viz-fullscreen-btn" type="button" style="width:100%;margin-top:8px;padding:6px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:6px;color:#00d4ff;cursor:pointer;">Enter Fullscreen (V)</button>
     </div>
 
     <div id="spotify-widget" class="spotify-widget" style="display:none;">
@@ -474,7 +522,34 @@
         cueMembers:     new Set(),
         cueDevice:      null,
         currentTrackId: '',
+        // Visualizer
+        vizMode:        parseInt(localStorage.getItem('mixer-viz-mode') || '0'),
+        vizFullscreen:  false,
+        vizSpectrum:    new Float32Array(8),
+        vizBeat:        false,
+        vizBPM:         0,
+        vizPhase:       0,
+        vizEffects: {
+            spectrumRing: localStorage.getItem('mixer-viz-spectrumRing') !== 'false',
+            waveformOrbit: localStorage.getItem('mixer-viz-waveformOrbit') !== 'false',
+            beatFlash: localStorage.getItem('mixer-viz-beatFlash') !== 'false',
+            particleDrift: localStorage.getItem('mixer-viz-particleDrift') !== 'false',
+        },
+        vizIntensity:   parseFloat(localStorage.getItem('mixer-viz-intensity') || '0.6'),
+        vizFsMode:      parseInt(localStorage.getItem('mixer-viz-fsmode') || '0'),
+        vizThemeIdx:    parseInt(localStorage.getItem('mixer-viz-theme') || '0'),
+        vizBeatFlashAlpha: 0,
+        vizParticles:   [],
+        vizWaveformAngle: 0,
     };
+
+    const VIZ_THEMES = [
+        { name: 'Cyan',       primary: '#00d4ff', secondary: '#0088aa', accent: '#ffffff', background: '#0a0a1a', beat: '#ffffff' },
+        { name: 'Sunset',     primary: '#ff6b35', secondary: '#f7c59f', accent: '#ffffc7', background: '#1a0a05', beat: '#ffdd57' },
+        { name: 'Neon',       primary: '#ff006e', secondary: '#39ff14', accent: '#bf00ff', background: '#0a001a', beat: '#39ff14' },
+        { name: 'Monochrome', primary: '#ffffff', secondary: '#888888', accent: '#cccccc', background: '#0a0a0a', beat: '#ffffff' },
+    ];
+    const VIZ_FS_MODES = ['Radial Spectrum', 'Particle Nebula', 'Waveform Terrain', 'Geometric Kaleidoscope', 'Frequency Waterfall'];
 
     /** Rebuild the deviceMap whenever the device list changes. */
     function rebuildDeviceMap() {
@@ -637,6 +712,17 @@
     socket.on("audio_energy", (data) => {
         state.djEnergy = data.energy || 0;
         if (state.djEnergy > 0.01) markDirty();
+    });
+
+    // Spectrum + beat data for visualizer
+    socket.on("audio_spectrum", (data) => {
+        if (data.bands) {
+            for (let i = 0; i < 8; i++) state.vizSpectrum[i] = data.bands[i] || 0;
+        }
+        if (data.beat !== undefined) state.vizBeat = data.beat;
+        if (data.bpm !== undefined) state.vizBPM = data.bpm;
+        if (data.phase !== undefined) state.vizPhase = data.phase;
+        markDirty();
     });
 
     // Progress bar interpolation + time display
@@ -1162,6 +1248,14 @@
                 ctx.fillText('CUE', pos.x, pos.y - DEVICE_RADIUS - 6);
             }
 
+            // Max volume lock indicator
+            if (device.max_volume && device.max_volume > 0) {
+                ctx.fillStyle = '#ff6b6b';
+                ctx.font = 'bold 8px sans-serif';
+                const cueOffset = state.cueMembers.has(id) ? 20 : 6;
+                ctx.fillText('MAX ' + Math.round(device.max_volume * 100) + '%', pos.x, pos.y - DEVICE_RADIUS - cueOffset);
+            }
+
             // Restore flash animation
             if (state.restoredDevice && state.restoredDevice.id === id && Date.now() < state.restoredDevice.until) {
                 const progress = (state.restoredDevice.until - Date.now()) / 1000;
@@ -1333,15 +1427,103 @@
         }
     });
 
+    // ── Visualizer settings panel ────────────────────────────────────
+    const vizPanel = document.getElementById('viz-panel');
+    const vizBtn = document.getElementById('btn-viz');
+    vizBtn.addEventListener('click', () => {
+        const show = vizPanel.style.display === 'none';
+        vizPanel.style.display = show ? '' : 'none';
+    });
+    document.getElementById('viz-close').addEventListener('click', () => {
+        vizPanel.style.display = 'none';
+    });
+
+    // Audio tier select
+    const vizTierSel = document.getElementById('viz-tier');
+    vizTierSel.value = state.vizMode;
+    vizTierSel.addEventListener('change', () => {
+        state.vizMode = parseInt(vizTierSel.value);
+        localStorage.setItem('mixer-viz-mode', state.vizMode);
+        socket.emit('set_visualizer_mode', { mode: state.vizMode });
+    });
+    // Emit stored mode on connect
+    if (state.vizMode > 0) {
+        socket.emit('set_visualizer_mode', { mode: state.vizMode });
+    }
+
+    // Intensity slider
+    const vizIntSlider = document.getElementById('viz-intensity');
+    const vizIntVal = document.getElementById('viz-intensity-val');
+    vizIntSlider.value = Math.round(state.vizIntensity * 100);
+    vizIntVal.textContent = vizIntSlider.value + '%';
+    vizIntSlider.addEventListener('input', () => {
+        state.vizIntensity = parseInt(vizIntSlider.value) / 100;
+        vizIntVal.textContent = vizIntSlider.value + '%';
+        localStorage.setItem('mixer-viz-intensity', state.vizIntensity);
+        markDirty();
+    });
+
+    // Effect toggles
+    const effMap = {
+        'viz-eff-ring': 'spectrumRing',
+        'viz-eff-orbit': 'waveformOrbit',
+        'viz-eff-flash': 'beatFlash',
+        'viz-eff-drift': 'particleDrift',
+    };
+    for (const [elId, key] of Object.entries(effMap)) {
+        const cb = document.getElementById(elId);
+        cb.checked = state.vizEffects[key];
+        cb.addEventListener('change', () => {
+            state.vizEffects[key] = cb.checked;
+            localStorage.setItem('mixer-viz-' + key, cb.checked);
+            markDirty();
+        });
+    }
+
+    // Fullscreen mode select
+    const vizFsSel = document.getElementById('viz-fsmode');
+    vizFsSel.value = state.vizFsMode;
+    vizFsSel.addEventListener('change', () => {
+        state.vizFsMode = parseInt(vizFsSel.value);
+        localStorage.setItem('mixer-viz-fsmode', state.vizFsMode);
+    });
+
+    // Theme select
+    const vizThemeSel = document.getElementById('viz-theme');
+    vizThemeSel.value = state.vizThemeIdx;
+    vizThemeSel.addEventListener('change', () => {
+        state.vizThemeIdx = parseInt(vizThemeSel.value);
+        localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
+        markDirty();
+    });
+
+    // Fullscreen button
+    document.getElementById('viz-fullscreen-btn').addEventListener('click', () => {
+        if (!state.vizFullscreen) enterVizFullscreen();
+    });
+
     // ── Drag event handlers ────────────────────────────────────────────
 
     /**
      * Convert a mouse or touch event to canvas-relative coordinates.
+     * Uses a cached bounding rect during drag to avoid layout thrashing.
      */
+    let _cachedRect = null;
+    let _cachedScaleX = 1;
+    let _cachedScaleY = 1;
+
+    function _updateCanvasRect() {
+        _cachedRect = canvas.getBoundingClientRect();
+        _cachedScaleX = CANVAS_SIZE / _cachedRect.width;
+        _cachedScaleY = CANVAS_SIZE / _cachedRect.height;
+    }
+
+    // Refresh on resize/scroll (rect may shift)
+    window.addEventListener('resize', _updateCanvasRect);
+    window.addEventListener('scroll', _updateCanvasRect, true);
+    _updateCanvasRect();  // initial
+
     function canvasCoords(e) {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = CANVAS_SIZE / rect.width;
-        const scaleY = CANVAS_SIZE / rect.height;
         let clientX, clientY;
         if (e.touches && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
@@ -1351,8 +1533,8 @@
             clientY = e.clientY;
         }
         return {
-            x: (clientX - rect.left) * scaleX,
-            y: (clientY - rect.top)  * scaleY
+            x: (clientX - _cachedRect.left) * _cachedScaleX,
+            y: (clientY - _cachedRect.top)  * _cachedScaleY
         };
     }
 
@@ -1394,6 +1576,7 @@
         const dy = p.y - state.controlPoint.y;
         if (dx * dx + dy * dy < 400) {  // 20^2 = 400
             state.isDragging = true;
+            _updateCanvasRect();  // refresh cached rect at drag start
             e.preventDefault();
         }
     }
@@ -1421,6 +1604,7 @@
         const clamped = clampToRing(p.x, p.y);
         state.controlPoint.x = clamped.x;
         state.controlPoint.y = clamped.y;
+        markDirty();  // always redraw during drag — prevents stale frames
 
         // Throttle volume sends to ~33Hz (every 30ms) to avoid flooding the server
         const now = performance.now();
