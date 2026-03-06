@@ -1551,12 +1551,88 @@
         ctx.globalAlpha = 1.0;
     }
     function drawFsKaleidoscope(w, h, cx, cy, theme) {
-        ctx.fillStyle = theme.primary;
-        ctx.globalAlpha = 0.3;
-        ctx.font = '24px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Geometric Kaleidoscope', cx, cy);
+        const spectrum = state.vizSpectrum;
+        const bass = (spectrum[0] + spectrum[1]) / 2;
+        const mids = (spectrum[2] + spectrum[3] + spectrum[4]) / 3;
+        const treble = (spectrum[5] + spectrum[6] + spectrum[7]) / 3;
+        const energy = state.djEnergy || 0;
+        const minDim = Math.min(w, h);
+        const folds = 6;
+
+        // Rotation speed driven by mids
+        state.vizKaleidoAngle += 0.002 + mids * 0.02;
+
+        // Beat shatter effect
+        if (state.vizBeat) state.vizKaleidoShatter = 1.0;
+        state.vizKaleidoShatter *= 0.92;
+
+        // Hue from treble (180-360 range mapped to HSL)
+        const hue = 180 + treble * 180;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+
+        for (let fold = 0; fold < folds; fold++) {
+            ctx.save();
+            ctx.rotate((fold / folds) * Math.PI * 2 + state.vizKaleidoAngle);
+
+            // Mirror every other fold
+            if (fold % 2 === 1) ctx.scale(1, -1);
+
+            const shatterOffset = state.vizKaleidoShatter * 15;
+
+            // Nested polygon layers
+            for (let layer = 0; layer < 4; layer++) {
+                const layerBand = spectrum[layer * 2] || 0;
+                const baseSize = minDim * (0.08 + layer * 0.06);
+                const size = baseSize * (0.3 + bass * 0.7) * (1.0 - state.vizKaleidoShatter * 0.3);
+                const sides = 3 + layer;  // triangle, square, pentagon, hexagon
+                const layerDist = (layer + 1) * minDim * 0.06 + shatterOffset * (layer + 1);
+
+                ctx.save();
+                ctx.translate(layerDist, 0);
+                ctx.rotate(state.vizKaleidoAngle * (layer % 2 === 0 ? 1 : -1) * 0.5);
+
+                ctx.beginPath();
+                for (let s = 0; s <= sides; s++) {
+                    const a = (s / sides) * Math.PI * 2 - Math.PI / 2;
+                    const px = Math.cos(a) * size;
+                    const py = Math.sin(a) * size;
+                    if (s === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+
+                const layerHue = (hue + layer * 40) % 360;
+                ctx.strokeStyle = `hsl(${layerHue}, 80%, ${50 + layerBand * 30}%)`;
+                ctx.globalAlpha = 0.4 + layerBand * 0.5;
+                ctx.lineWidth = 1.5 + bass * 2;
+                ctx.stroke();
+
+                // Fill with low alpha for depth
+                ctx.fillStyle = `hsl(${layerHue}, 60%, ${30 + layerBand * 20}%)`;
+                ctx.globalAlpha = 0.08 + layerBand * 0.12;
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        // Center mandala
+        const mandalR = 20 + bass * 30;
+        const mandalGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, mandalR);
+        mandalGrad.addColorStop(0, `hsl(${hue}, 80%, 70%)`);
+        mandalGrad.addColorStop(1, 'transparent');
+        ctx.beginPath();
+        ctx.arc(0, 0, mandalR, 0, Math.PI * 2);
+        ctx.fillStyle = mandalGrad;
+        ctx.globalAlpha = 0.5 + energy * 0.3;
+        ctx.fill();
+
         ctx.globalAlpha = 1.0;
+        ctx.restore();
     }
     function drawFsWaterfall(w, h, cx, cy, theme) {
         ctx.fillStyle = theme.primary;
