@@ -703,6 +703,12 @@
             spotifyLastUpdate = Date.now();
             spotifyEls.playPause.innerHTML = spotifyPlaying ? '&#9646;&#9646;' : '&#9654;';
             state.currentTrackId = data.track_id || '';
+            // Show now-playing overlay in fullscreen on track change
+            if (state.vizFullscreen && data.track_id !== state._vizLastOverlayTrackId) {
+                state._vizLastOverlayTrackId = data.track_id;
+                state.vizSpotifyOverlayAlpha = 1.0;
+                state._vizSpotifyShowTimer = 0;
+            }
             // Auto-DJ: rotate primary speaker on track change
             if (state.autoDJ && data.track_id && data.track_id !== state.djLastTrackId) {
                 state.djLastTrackId = data.track_id;
@@ -1718,9 +1724,10 @@
         ctx.globalAlpha = 1.0;
     }
     function drawFsOverlays(w, h) {
-        // Mode name overlay
+        const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
+
+        // Mode name overlay (fades after mode switch)
         if (state.vizModeNameAlpha > 0.01) {
-            const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
             ctx.save();
             ctx.font = 'bold 32px sans-serif';
             ctx.textAlign = 'center';
@@ -1731,6 +1738,70 @@
             ctx.restore();
             state.vizModeNameAlpha -= 0.008;
             if (state.vizModeNameAlpha < 0) state.vizModeNameAlpha = 0;
+        }
+
+        // Spotify now-playing overlay (bottom-left)
+        if (state.vizSpotifyOverlayAlpha > 0.01) {
+            const trackEl = document.getElementById('spotify-track');
+            const artistEl = document.getElementById('spotify-artist');
+            const trackText = trackEl ? trackEl.textContent : '';
+            const artistText = artistEl ? artistEl.textContent : '';
+
+            if (trackText) {
+                ctx.save();
+                const padding = 12;
+                const x = padding;
+                const y = h - padding;
+
+                // Semi-transparent background pill
+                ctx.font = 'bold 14px sans-serif';
+                const trackWidth = ctx.measureText(trackText).width;
+                ctx.font = '12px sans-serif';
+                const artistWidth = ctx.measureText(artistText).width;
+                const pillWidth = Math.max(trackWidth, artistWidth) + padding * 2;
+                const pillHeight = 44;
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.globalAlpha = state.vizSpotifyOverlayAlpha;
+                const pillY = y - pillHeight;
+                ctx.beginPath();
+                // Rounded rect
+                const r = 8;
+                ctx.moveTo(x + r, pillY);
+                ctx.lineTo(x + pillWidth - r, pillY);
+                ctx.quadraticCurveTo(x + pillWidth, pillY, x + pillWidth, pillY + r);
+                ctx.lineTo(x + pillWidth, pillY + pillHeight - r);
+                ctx.quadraticCurveTo(x + pillWidth, pillY + pillHeight, x + pillWidth - r, pillY + pillHeight);
+                ctx.lineTo(x + r, pillY + pillHeight);
+                ctx.quadraticCurveTo(x, pillY + pillHeight, x, pillY + pillHeight - r);
+                ctx.lineTo(x, pillY + r);
+                ctx.quadraticCurveTo(x, pillY, x + r, pillY);
+                ctx.closePath();
+                ctx.fill();
+
+                // Track name
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = state.vizSpotifyOverlayAlpha;
+                ctx.fillText(trackText, x + padding, pillY + 8);
+
+                // Artist
+                ctx.font = '12px sans-serif';
+                ctx.fillStyle = theme.primary;
+                ctx.fillText(artistText, x + padding, pillY + 26);
+
+                ctx.restore();
+            }
+
+            // Decay after 5 seconds (300 frames at 60fps)
+            if (!state._vizSpotifyShowTimer) state._vizSpotifyShowTimer = 0;
+            state._vizSpotifyShowTimer++;
+            if (state._vizSpotifyShowTimer > 300) {
+                state.vizSpotifyOverlayAlpha -= 0.02;
+                if (state.vizSpotifyOverlayAlpha < 0) state.vizSpotifyOverlayAlpha = 0;
+            }
         }
     }
 
