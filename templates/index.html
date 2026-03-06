@@ -1027,6 +1027,228 @@
         return g;
     })();
 
+    // ── Visualizer mixer effects ─────────────────────────────────────
+    function drawSpectrumRing(intensity, theme) {
+        const spectrum = state.vizSpectrum;
+        const hasSpectrum = state.vizMode >= 1;
+
+        // Interpolate 8 bands to 64 bars
+        const barCount = 64;
+        const bars = new Float32Array(barCount);
+        if (hasSpectrum) {
+            for (let i = 0; i < barCount; i++) {
+                const bandFloat = (i / barCount) * 7;
+                const lo = Math.floor(bandFloat);
+                const hi = Math.min(lo + 1, 7);
+                const frac = bandFloat - lo;
+                bars[i] = spectrum[lo] * (1 - frac) + spectrum[hi] * frac;
+            }
+        } else {
+            // Fallback: uniform pulse with energy
+            const e = state.djEnergy || 0;
+            bars.fill(e);
+        }
+
+        ctx.save();
+        ctx.translate(CENTER, CENTER);
+        const maxBarLen = 40 * intensity;
+
+        for (let i = 0; i < barCount; i++) {
+            const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+            const amp = bars[i];
+            const barLen = amp * maxBarLen;
+            if (barLen < 0.5) continue;
+
+            const innerR = RING_RADIUS - barLen - 4;
+            const outerR = RING_RADIUS - 4;
+            const x1 = Math.cos(angle) * innerR;
+            const y1 = Math.sin(angle) * innerR;
+            const x2 = Math.cos(angle) * outerR;
+            const y2 = Math.sin(angle) * outerR;
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = theme.primary;
+            ctx.globalAlpha = amp * 0.6 * intensity;
+            ctx.lineWidth = Math.max(1, (Math.PI * 2 * RING_RADIUS / barCount) * 0.6);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+    function drawWaveformOrbit(intensity, theme) {
+        const spectrum = state.vizSpectrum;
+        const energy = state.djEnergy || 0;
+        const hasSpectrum = state.vizMode >= 1;
+        const baseRadius = RING_RADIUS * 0.45;
+        const points = 128;
+
+        // Slow rotation
+        state.vizWaveformAngle += 0.003;
+
+        ctx.save();
+        ctx.translate(CENTER, CENTER);
+        ctx.rotate(state.vizWaveformAngle);
+        ctx.globalCompositeOperation = 'lighter';
+
+        ctx.beginPath();
+        for (let i = 0; i <= points; i++) {
+            const angle = (i / points) * Math.PI * 2;
+            // Map point to spectrum band for radius offset
+            const bandIdx = Math.floor((i / points) * 7.99);
+            const amp = hasSpectrum ? spectrum[bandIdx] : energy;
+            const wobble = amp * 30 * intensity;
+            const r = baseRadius + wobble + Math.sin(angle * 4 + state.vizWaveformAngle * 3) * 5 * intensity;
+
+            const x = Math.cos(angle) * r;
+            const y = Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+
+        // Color: interpolate from primary (quiet) to secondary (loud)
+        const loudness = hasSpectrum ? (spectrum[0] + spectrum[1] + spectrum[2]) / 3 : energy;
+        const alpha = (0.2 + loudness * 0.5) * intensity;
+        ctx.strokeStyle = loudness > 0.5 ? theme.secondary : theme.primary;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+    function drawBeatFlash(intensity, theme) {
+        // Trigger flash on beat
+        if (state.vizBeat) {
+            state.vizBeatFlashAlpha = 0.7 * intensity;
+        }
+
+        if (state.vizBeatFlashAlpha < 0.01) return;
+
+        const progress = 1.0 - (state.vizBeatFlashAlpha / (0.7 * Math.max(0.01, intensity)));
+        const flashRadius = RING_RADIUS * (0.3 + progress * 0.7);
+
+        ctx.save();
+        const grad = ctx.createRadialGradient(
+            CENTER, CENTER, 0,
+            CENTER, CENTER, flashRadius
+        );
+        grad.addColorStop(0, theme.beat);
+        grad.addColorStop(0.5, theme.beat);
+        grad.addColorStop(1, 'transparent');
+
+        ctx.beginPath();
+        ctx.arc(CENTER, CENTER, flashRadius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = state.vizBeatFlashAlpha;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+
+        // Decay
+        state.vizBeatFlashAlpha *= 0.85;
+        if (state.vizBeatFlashAlpha < 0.01) state.vizBeatFlashAlpha = 0;
+    }
+
+    function drawParticleDrift(intensity, theme) {
+        const energy = state.djEnergy || 0;
+        const maxParticles = 100;
+        const particles = state.vizParticles;
+
+        // Spawn new particles
+        const spawnRate = Math.max(0, Math.floor(energy * 3 * intensity));
+        for (let s = 0; s < spawnRate && particles.length < maxParticles; s++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = (0.3 + Math.random() * 0.7) * (1 + energy);
+            particles.push({
+                x: CENTER,
+                y: CENTER,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1.0,
+                decay: 0.005 + Math.random() * 0.01,
+                size: 1 + Math.random() * 2,
+            });
+        }
+
+        // Beat burst
+        if (state.vizBeat && state.vizMode >= 2) {
+            const burstCount = Math.min(12, maxParticles - particles.length);
+            for (let b = 0; b < burstCount; b++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 1.5 + Math.random() * 2;
+                particles.push({
+                    x: CENTER,
+                    y: CENTER,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 1.0,
+                    decay: 0.008 + Math.random() * 0.012,
+                    size: 1.5 + Math.random() * 2.5,
+                });
+            }
+        }
+
+        // Clip to ring
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(CENTER, CENTER, RING_RADIUS - 2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Update and draw
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= p.decay;
+
+            // Remove dead or out-of-bounds particles
+            const dx = p.x - CENTER;
+            const dy = p.y - CENTER;
+            if (p.life <= 0 || (dx * dx + dy * dy) > RING_RADIUS * RING_RADIUS) {
+                particles.splice(i, 1);
+                continue;
+            }
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * intensity, 0, Math.PI * 2);
+            ctx.fillStyle = theme.primary;
+            ctx.globalAlpha = p.life * intensity * 0.6;
+            ctx.fill();
+        }
+
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+    function drawMixerEffects() {
+        const intensity = state.vizIntensity;
+        if (intensity < 0.01) return;
+        const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
+
+        // Layer 1: Spectrum Ring
+        if (state.vizEffects.spectrumRing) {
+            drawSpectrumRing(intensity, theme);
+        }
+        // Layer 2: Waveform Orbit
+        if (state.vizEffects.waveformOrbit) {
+            drawWaveformOrbit(intensity, theme);
+        }
+        // Layer 3: Beat Flash
+        if (state.vizEffects.beatFlash && state.vizMode >= 2) {
+            drawBeatFlash(intensity, theme);
+        }
+        // Layer 4: Particle Drift
+        if (state.vizEffects.particleDrift) {
+            drawParticleDrift(intensity, theme);
+        }
+    }
+
     /**
      * Main render function.  Clears the canvas and redraws everything:
      *   1. Background
@@ -1071,6 +1293,9 @@
             ctx.fillStyle = pulseGlow;
             ctx.fill();
         }
+
+        // Visualizer background effects
+        drawMixerEffects();
 
         const n = state.devices.length;
 
