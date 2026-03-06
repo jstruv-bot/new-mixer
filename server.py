@@ -18,13 +18,6 @@ import urllib.parse
 import collections
 import json as _json
 
-# Optional: MIDI controller support
-try:
-    import mido
-    _MIDI_AVAILABLE = True
-except ImportError:
-    _MIDI_AVAILABLE = False
-
 # Suppress noisy pycaw COMError warnings from non-Bluetooth devices
 warnings.filterwarnings("ignore", message="COMError attempting to get property")
 
@@ -259,7 +252,6 @@ class AudioRouter:
         self._eq_filter_state = {}      # device_id -> {bass_state, treble_state, bass_coeffs, treble_coeffs}
         self._delay_ms = {}             # device_id -> delay in ms (0-500)
         self._delay_buffers = {}        # device_id -> deque of audio chunk bytes
-        self._effects = {}              # device_id -> {type, rate_hz, depth, phase}
         self._latency = {}              # device_id -> latest write latency in ms
         self._source_muted = False      # True if we silenced the loopback source
         self._source_endpoint = None    # IAudioEndpointVolume of source device
@@ -504,19 +496,6 @@ class AudioRouter:
         """Set global stereo separation (0.0 = mono, 1.0 = full split)."""
         with self._lock:
             self._stereo_sep = max(0.0, min(1.0, float(value)))
-
-    def set_effect(self, device_id, effect_type, rate_hz=2.0, depth=0.5):
-        """Set BPM-synced effect for a device."""
-        with self._lock:
-            if not effect_type or effect_type == 'off':
-                self._effects.pop(device_id, None)
-            else:
-                self._effects[device_id] = {
-                    'type': effect_type,
-                    'rate_hz': max(0.1, float(rate_hz)),
-                    'depth': max(0.0, min(1.0, float(depth))),
-                    'phase': 0.0,
-                }
 
     def get_latency(self):
         """Return latest per-device write latency."""
@@ -909,45 +888,6 @@ class AudioRouter:
                     else:
                         audio = np.zeros_like(audio)
 
-                # BPM-synced effects
-                with self._lock:
-                    fx = self._effects.get(device_id)
-                    fx_snap = dict(fx) if fx else None
-                if fx_snap:
-                    frames = len(audio) // out_channels
-                    if frames > 0:
-                        rate = fx_snap['rate_hz']
-                        depth = fx_snap['depth']
-                        phase = fx_snap['phase']
-                        t = (np.arange(frames, dtype=np.float32)
-                             / self._sample_rate + phase)
-                        if fx_snap['type'] == 'tremolo':
-                            mod = (1.0 - depth * 0.5
-                                   * (1 + np.sin(2 * np.pi * rate * t)))
-                            for ch in range(out_channels):
-                                audio[ch::out_channels] *= mod
-                        elif (fx_snap['type'] == 'autopan'
-                              and out_channels >= 2):
-                            pan = 0.5 * (1 + np.sin(
-                                2 * np.pi * rate * t))
-                            audio[0::out_channels] *= (
-                                1 - depth * pan).astype(self.NUMPY_DTYPE)
-                            audio[1::out_channels] *= (
-                                1 - depth * (1 - pan)).astype(
-                                    self.NUMPY_DTYPE)
-                        elif fx_snap['type'] == 'filter_sweep':
-                            sweep = 0.5 + 0.5 * np.sin(
-                                2 * np.pi * rate * 0.25 * t)
-                            mod = (1 - depth * 0.5 * (1 - sweep)).astype(
-                                self.NUMPY_DTYPE)
-                            for ch in range(out_channels):
-                                audio[ch::out_channels] *= mod
-                        new_phase = float(t[-1]) % max(
-                            10.0, 1.0 / max(rate, 0.01))
-                        with self._lock:
-                            if device_id in self._effects:
-                                self._effects[device_id]['phase'] = new_phase
-
                 np.clip(audio, -1.0, 1.0, out=audio)
 
                 # Resample if output device runs at a different rate
@@ -1012,12 +952,6 @@ _zone_positions = {}             # device_id -> {x, y} canvas coords
 _cue_device_id = None            # device used as cue/headphone output
 _cue_members = set()             # device_ids in cue (preview) mode
 _min_volumes = {}                # device_id -> float (0.0-1.0) minimum volume floor
-_setlist_presets = {}            # spotify_track_id -> preset dict
-_automation_keyframes = []       # [{pct: 0-1, x, y}] sorted by pct
-_automation_active = False
-_midi_device_name = None         # selected MIDI input device name
-_midi_mappings = {}              # cc_number -> {target, device_id}
-_midi_thread = None
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -1512,24 +1446,6 @@ def spotify_seek():
     return jsonify({'success': True})
 
 
-@app.route('/api/spotify/audio-features/<track_id>')
-def spotify_audio_features(track_id):
-    """Get audio features (BPM/tempo) for a track."""
-    token = _get_spotify_token()
-    if not token:
-        return jsonify({'error': 'Not authenticated'}), 401
-    try:
-        resp = http_requests.get(
-            f'https://api.spotify.com/v1/audio-features/{track_id}',
-            headers={'Authorization': f'Bearer {token}'}, timeout=5
-        )
-        if resp.status_code != 200:
-            return jsonify({'tempo': 120})  # fallback BPM
-        data = resp.json()
-        return jsonify({'tempo': data.get('tempo', 120)})
-    except Exception:
-        return jsonify({'tempo': 120})
-
 
 def _get_spotify_token():
     """Get valid Spotify access token, refreshing if needed."""
@@ -1698,17 +1614,6 @@ def ws_set_zone_position(data):
     socketio.emit("zone_update", _get_zone_snapshot())
 
 
-@socketio.on("set_effect")
-def ws_set_effect(data):
-    """Set BPM-synced effect for a device."""
-    device_id = data.get("device_id")
-    effect_type = data.get("type", "off")
-    rate_hz = data.get("rate_hz", 2.0)
-    depth = data.get("depth", 0.5)
-    if device_id is None:
-        return
-    audio_router.set_effect(device_id, effect_type, rate_hz, depth)
-
 
 @socketio.on("set_cue")
 def ws_set_cue(data):
@@ -1736,73 +1641,12 @@ def ws_set_cue_device(data):
                                   "cue_device": _cue_device_id})
 
 
-@socketio.on("save_setlist_preset")
-def ws_save_setlist_preset(data):
-    """Link/unlink a mixer preset to a Spotify track."""
-    track_id = data.get("track_id")
-    preset = data.get("preset")
-    if not track_id:
-        return
-    with _state_lock:
-        if preset:
-            _setlist_presets[track_id] = preset
-        else:
-            _setlist_presets.pop(track_id, None)
-    socketio.emit("setlist_update", _get_setlist_snapshot())
-
-
-@socketio.on("set_automation")
-def ws_set_automation(data):
-    """Set crossfade automation keyframes."""
-    global _automation_active
-    keyframes = data.get("keyframes", [])
-    active = data.get("active", False)
-    with _state_lock:
-        _automation_keyframes.clear()
-        _automation_keyframes.extend(
-            sorted(keyframes, key=lambda k: k.get('pct', 0)))
-        _automation_active = active
-    socketio.emit("automation_update", {
-        "keyframes": list(_automation_keyframes),
-        "active": _automation_active})
-
-
-@socketio.on("set_midi_device")
-def ws_set_midi_device(data):
-    """Select a MIDI input device for controller mapping."""
-    global _midi_device_name
-    name = data.get("name")
-    with _state_lock:
-        _midi_device_name = name
-    _start_midi_listener()
-
-
-@socketio.on("set_midi_mapping")
-def ws_set_midi_mapping(data):
-    """Map a MIDI CC number to a mixer control."""
-    cc = data.get("cc")
-    target = data.get("target")  # 'crossfade_x', 'crossfade_y', 'volume'
-    device_id = data.get("device_id")
-    if cc is None:
-        return
-    with _state_lock:
-        if target:
-            _midi_mappings[int(cc)] = {
-                "target": target, "device_id": device_id}
-        else:
-            _midi_mappings.pop(int(cc), None)
-
 
 def _get_zone_snapshot():
     """Return zone positions under lock."""
     with _state_lock:
         return dict(_zone_positions)
 
-
-def _get_setlist_snapshot():
-    """Return setlist presets under lock."""
-    with _state_lock:
-        return dict(_setlist_presets)
 
 
 # ---------------------------------------------------------------------------
@@ -1828,19 +1672,6 @@ def api_latency():
     return jsonify(audio_router.get_latency())
 
 
-@app.route('/api/midi/devices')
-def api_midi_devices():
-    """List available MIDI input devices."""
-    if not _MIDI_AVAILABLE:
-        return jsonify({'available': False, 'devices': []})
-    try:
-        inputs = mido.get_input_names()
-    except Exception:
-        inputs = []
-    return jsonify({
-        'available': True, 'devices': inputs,
-        'selected': _midi_device_name})
-
 
 @app.route('/api/zone-positions', methods=['GET'])
 def api_get_zone_positions():
@@ -1860,73 +1691,9 @@ def api_set_zone_positions():
     return jsonify({'success': True})
 
 
-@app.route('/api/setlist-presets')
-def api_setlist_presets():
-    """Get all setlist-linked presets."""
-    return jsonify(_get_setlist_snapshot())
-
-
-@app.route('/api/automation')
-def api_automation():
-    """Get current automation keyframes."""
-    with _state_lock:
-        return jsonify({
-            "keyframes": list(_automation_keyframes),
-            "active": _automation_active})
-
-
-# ---------------------------------------------------------------------------
-# MIDI listener
-# ---------------------------------------------------------------------------
-
-
-def _start_midi_listener():
-    """Start or restart the MIDI listener thread."""
-    global _midi_thread
-    if not _MIDI_AVAILABLE or not _midi_device_name:
-        return
-    _midi_thread = threading.Thread(target=_midi_worker, daemon=True)
-    _midi_thread.start()
-
-
-def _midi_worker():
-    """Thread: listen for MIDI CC messages and map to mixer controls."""
-    try:
-        with mido.open_input(_midi_device_name) as port:
-            print(f"[MIDI] Listening on '{_midi_device_name}'")
-            for msg in port:
-                if _shutdown_event.is_set():
-                    break
-                if _midi_device_name != port.name:
-                    break  # Device changed, exit to be restarted
-                if msg.type == 'control_change':
-                    _handle_midi_cc(msg.control, msg.value / 127.0)
-    except Exception as exc:
-        print(f"[MIDI] Error: {exc}")
-
-
-def _handle_midi_cc(cc, value):
-    """Process a MIDI CC message through the mapping table."""
-    with _state_lock:
-        mapping = _midi_mappings.get(cc)
-    if not mapping:
-        return
-    target = mapping['target']
-    if target == 'crossfade_x':
-        socketio.emit('midi_cc', {'target': 'crossfade_x', 'value': value})
-    elif target == 'crossfade_y':
-        socketio.emit('midi_cc', {'target': 'crossfade_y', 'value': value})
-    elif target == 'volume' and mapping.get('device_id'):
-        audio_router.set_volume(mapping['device_id'], value)
-        socketio.emit('midi_cc', {
-            'target': 'volume',
-            'device_id': mapping['device_id'],
-            'value': value})
-
 
 def _spotify_poller():
     """Background thread: polls Spotify every 3s, emits via WebSocket."""
-    last_setlist_track = None
     while not _shutdown_event.is_set():
         _shutdown_event.wait(timeout=3)
         if _shutdown_event.is_set():
@@ -1957,48 +1724,8 @@ def _spotify_poller():
                 'track_id': track_id,
                 'energy': round(audio_router.energy_level, 3),
             })
-            # Setlist preset matching — only emit once per track change
-            if track_id and track_id != last_setlist_track:
-                last_setlist_track = track_id
-                with _state_lock:
-                    matched = _setlist_presets.get(track_id)
-                if matched:
-                    socketio.emit('setlist_preset_match', {
-                        'track_id': track_id, 'preset': matched})
-            # Automation playback
-            with _state_lock:
-                if _automation_active and _automation_keyframes and duration_ms:
-                    pct = progress_ms / duration_ms
-                    kfs = list(_automation_keyframes)
-                    # Interpolate position from keyframes
-                    if kfs:
-                        pos = _interpolate_keyframes(kfs, pct)
-                        if pos:
-                            socketio.emit('automation_position', pos)
         except Exception:
             pass
-
-
-def _interpolate_keyframes(keyframes, pct):
-    """Interpolate x,y position from sorted keyframes at given percentage."""
-    if not keyframes:
-        return None
-    if pct <= keyframes[0].get('pct', 0):
-        return {'x': keyframes[0].get('x', 250), 'y': keyframes[0].get('y', 250)}
-    if pct >= keyframes[-1].get('pct', 1):
-        return {'x': keyframes[-1].get('x', 250), 'y': keyframes[-1].get('y', 250)}
-    for i in range(len(keyframes) - 1):
-        p0 = keyframes[i].get('pct', 0)
-        p1 = keyframes[i + 1].get('pct', 1)
-        if p0 <= pct <= p1:
-            t = (pct - p0) / max(p1 - p0, 0.001)
-            return {
-                'x': keyframes[i].get('x', 250) + t * (
-                    keyframes[i + 1].get('x', 250) - keyframes[i].get('x', 250)),
-                'y': keyframes[i].get('y', 250) + t * (
-                    keyframes[i + 1].get('y', 250) - keyframes[i].get('y', 250)),
-            }
-    return None
 
 
 def _energy_emitter():
