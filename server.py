@@ -715,7 +715,7 @@ _level_decay = 0.85
 # Spotify integration
 # ---------------------------------------------------------------------------
 
-SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '')
+SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '180f7b3240d7473b9e56aedc227b5f3e')
 SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:5000/spotify/callback'
 SPOTIFY_SCOPES = 'user-read-currently-playing user-modify-playback-state'
 
