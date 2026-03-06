@@ -341,6 +341,11 @@
             <input type="range" id="eq-pan" min="-100" max="100" value="0" step="1">
             <span id="eq-pan-val">C</span>
         </div>
+        <div class="eq-slider-row">
+            <label>Max Vol</label>
+            <input type="range" id="eq-maxvol" min="0" max="100" value="0" step="5">
+            <span id="eq-maxvol-val">Off</span>
+        </div>
     </div>
 
     <div id="spotify-widget" class="spotify-widget" style="display:none;">
@@ -1403,6 +1408,8 @@
     const eqDelayVal = document.getElementById('eq-delay-val');
     const eqPan = document.getElementById('eq-pan');
     const eqPanVal = document.getElementById('eq-pan-val');
+    const eqMaxVol = document.getElementById('eq-maxvol');
+    const eqMaxVolVal = document.getElementById('eq-maxvol-val');
     const eqDeviceName = document.getElementById('eq-device-name');
     const eqClose = document.getElementById('eq-close');
 
@@ -1425,6 +1432,9 @@
         const panVal = Math.round((state.panPositions[deviceId] || 0) * 100);
         eqPan.value = panVal;
         eqPanVal.textContent = panVal === 0 ? 'C' : (panVal < 0 ? 'L' + Math.abs(panVal) : 'R' + panVal);
+        const maxV = dev.max_volume || 0;
+        eqMaxVol.value = Math.round(maxV * 100);
+        eqMaxVolVal.textContent = maxV > 0 ? Math.round(maxV * 100) + '%' : 'Off';
         eqPanel.style.display = 'block';
     }
 
@@ -1475,6 +1485,13 @@
         state.panPositions[state.eqTarget] = pan;
         localStorage.setItem('mixer-pans', JSON.stringify(state.panPositions));
         socket.emit('set_pan', { device_id: state.eqTarget, pan: pan });
+    });
+
+    eqMaxVol.addEventListener('input', () => {
+        if (!state.eqTarget) return;
+        const val = parseInt(eqMaxVol.value);
+        eqMaxVolVal.textContent = val === 0 ? 'Off' : val + '%';
+        socket.emit('set_max_volume', { device_id: state.eqTarget, max_volume: val / 100 });
     });
 
     // Global stereo separation slider

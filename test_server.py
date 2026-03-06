@@ -563,6 +563,44 @@ class TestCueChannel:
 
 
 # ---------------------------------------------------------------------------
+# TestMaxVolume
+# ---------------------------------------------------------------------------
+
+
+class TestMaxVolume:
+    """Speaker volume lock / max volume tests."""
+
+    def test_max_volume_clamp(self):
+        with server_module._state_lock:
+            server_module._max_volumes['d1'] = 0.5
+        server_module.audio_router.set_volume('d1', 0.8)
+        with server_module.audio_router._lock:
+            assert server_module.audio_router._volumes['d1'] <= 0.5
+        # Cleanup
+        with server_module._state_lock:
+            server_module._max_volumes.pop('d1', None)
+
+    def test_set_max_volume_via_ws(self, socketio_client):
+        socketio_client.emit('set_max_volume', {
+            'device_id': 'd1', 'max_volume': 0.6
+        })
+        with server_module._state_lock:
+            assert server_module._max_volumes.get('d1') == 0.6
+        # Cleanup
+        with server_module._state_lock:
+            server_module._max_volumes.pop('d1', None)
+
+    def test_max_volume_zero_means_unlimited(self, socketio_client):
+        with server_module._state_lock:
+            server_module._max_volumes['d1'] = 0.5
+        socketio_client.emit('set_max_volume', {
+            'device_id': 'd1', 'max_volume': 0
+        })
+        with server_module._state_lock:
+            assert 'd1' not in server_module._max_volumes
+
+
+# ---------------------------------------------------------------------------
 # TestEnrichDevices
 # ---------------------------------------------------------------------------
 

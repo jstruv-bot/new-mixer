@@ -377,8 +377,13 @@ class AudioRouter:
 
     def set_volume(self, device_id, volume):
         """Update the volume multiplier for a device's output stream."""
+        vol = max(0.0, min(1.0, float(volume)))
+        with _state_lock:
+            max_vol = _max_volumes.get(device_id)
+        if max_vol is not None and max_vol > 0:
+            vol = min(vol, max_vol)
         with self._lock:
-            self._volumes[device_id] = max(0.0, min(1.0, float(volume)))
+            self._volumes[device_id] = vol
 
     # Minimum volume to set on the source device (2%).
     # WASAPI loopback captures post-volume audio, so 0% = silence.
@@ -952,6 +957,7 @@ _zone_positions = {}             # device_id -> {x, y} canvas coords
 _cue_device_id = None            # device used as cue/headphone output
 _cue_members = set()             # device_ids in cue (preview) mode
 _min_volumes = {}                # device_id -> float (0.0-1.0) minimum volume floor
+_max_volumes = {}                # device_id -> float (0.0-1.0) max volume cap
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -1047,6 +1053,7 @@ def _enrich_devices(devices):
             d2["zone"] = _zone_positions.get(did, None)
             d2["cue"] = did in _cue_members
             d2["min_volume"] = _min_volumes.get(did, 0.0)
+            d2["max_volume"] = _max_volumes.get(did, 0.0)
             d2["delay_ms"] = audio_router._delay_ms.get(did, 0)
             d2["pan"] = audio_router._pan.get(did, 0.0)
             enriched.append(d2)
@@ -1533,6 +1540,20 @@ def ws_set_min_volume(data):
     min_vol = max(0.0, min(1.0, float(min_vol)))
     with _state_lock:
         _min_volumes[device_id] = min_vol
+
+
+@socketio.on("set_max_volume")
+def ws_set_max_volume(data):
+    """Set max volume lock for a device (0 = unlimited)."""
+    device_id = data.get("device_id")
+    max_vol = data.get("max_volume", 0)
+    if device_id is None:
+        return
+    with _state_lock:
+        if max_vol and float(max_vol) > 0:
+            _max_volumes[device_id] = max(0.0, min(1.0, float(max_vol)))
+        else:
+            _max_volumes.pop(device_id, None)
 
 
 @socketio.on("refresh_devices")
