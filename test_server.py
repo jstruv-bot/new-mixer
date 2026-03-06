@@ -2,6 +2,7 @@
 import sys
 import time
 import types
+import collections
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -530,3 +531,336 @@ class TestSpotify:
         with patch('server.http_requests.put', return_value=mock_resp):
             resp = client.post('/api/spotify/pause')
             assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# TestDelayCompensation
+# ---------------------------------------------------------------------------
+
+
+class TestDelayCompensation:
+    """Delay compensation tests."""
+
+    def test_set_delay_via_ws(self, socketio_client):
+        with patch.object(server_module.audio_router, 'set_delay') as mock:
+            socketio_client.emit('set_delay', {
+                'device_id': 'd1', 'delay_ms': 50
+            })
+            mock.assert_called_with('d1', 50)
+
+    def test_set_delay_rest(self, client):
+        with patch.object(server_module.audio_router, 'set_delay') as mock:
+            resp = client.post('/api/delay', json={
+                'device_id': 'd1', 'delay_ms': 100
+            })
+            assert resp.status_code == 200
+            mock.assert_called_with('d1', 100)
+
+    def test_set_delay_rest_missing_device(self, client):
+        resp = client.post('/api/delay', json={'delay_ms': 50})
+        assert resp.status_code == 400
+
+    def test_delay_clamping(self):
+        """Delay should be clamped to 0-500ms."""
+        server_module.audio_router.set_delay('d1', -10)
+        with server_module.audio_router._lock:
+            assert server_module.audio_router._delay_ms.get('d1', 0) == 0.0
+        server_module.audio_router.set_delay('d1', 9999)
+        with server_module.audio_router._lock:
+            assert server_module.audio_router._delay_ms.get('d1', 0) == 500.0
+
+
+# ---------------------------------------------------------------------------
+# TestEffects
+# ---------------------------------------------------------------------------
+
+
+class TestEffects:
+    """BPM-synced effects tests."""
+
+    def test_set_effect_via_ws(self, socketio_client):
+        with patch.object(server_module.audio_router, 'set_effect') as mock:
+            socketio_client.emit('set_effect', {
+                'device_id': 'd1', 'type': 'tremolo',
+                'rate_hz': 2.0, 'depth': 0.5
+            })
+            mock.assert_called_with('d1', 'tremolo', 2.0, 0.5)
+
+    def test_set_effect_off(self):
+        server_module.audio_router.set_effect('d1', 'tremolo', 2.0, 0.5)
+        with server_module.audio_router._lock:
+            assert 'd1' in server_module.audio_router._effects
+        server_module.audio_router.set_effect('d1', 'off')
+        with server_module.audio_router._lock:
+            assert 'd1' not in server_module.audio_router._effects
+
+    def test_effect_depth_clamping(self):
+        server_module.audio_router.set_effect('d1', 'tremolo', 2.0, 5.0)
+        with server_module.audio_router._lock:
+            assert server_module.audio_router._effects['d1']['depth'] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestLatency
+# ---------------------------------------------------------------------------
+
+
+class TestLatency:
+    """Latency monitor tests."""
+
+    def test_latency_endpoint(self, client):
+        resp = client.get('/api/latency')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, dict)
+
+    def test_get_latency_returns_dict(self):
+        result = server_module.audio_router.get_latency()
+        assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# TestZonePositions
+# ---------------------------------------------------------------------------
+
+
+class TestZonePositions:
+    """Speaker zone mapping tests."""
+
+    def test_set_zone_position_via_ws(self, socketio_client):
+        socketio_client.emit('set_zone_position', {
+            'device_id': 'd1', 'x': 100, 'y': 200
+        })
+        with server_module._state_lock:
+            assert server_module._zone_positions.get('d1') == {
+                'x': 100.0, 'y': 200.0}
+
+    def test_get_zone_positions_rest(self, client):
+        with server_module._state_lock:
+            server_module._zone_positions['d1'] = {'x': 150, 'y': 250}
+        resp = client.get('/api/zone-positions')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert 'd1' in data
+
+    def test_set_zone_positions_rest(self, client):
+        resp = client.post('/api/zone-positions', json={
+            'd2': {'x': 300, 'y': 400}
+        })
+        assert resp.status_code == 200
+        with server_module._state_lock:
+            assert server_module._zone_positions['d2']['x'] == 300.0
+
+
+# ---------------------------------------------------------------------------
+# TestCueChannel
+# ---------------------------------------------------------------------------
+
+
+class TestCueChannel:
+    """Cue/preview channel tests."""
+
+    def test_set_cue_enable(self, socketio_client):
+        socketio_client.emit('set_cue', {
+            'device_id': 'd1', 'enabled': True
+        })
+        with server_module._state_lock:
+            assert 'd1' in server_module._cue_members
+
+    def test_set_cue_disable(self, socketio_client):
+        with server_module._state_lock:
+            server_module._cue_members.add('d1')
+        socketio_client.emit('set_cue', {
+            'device_id': 'd1', 'enabled': False
+        })
+        with server_module._state_lock:
+            assert 'd1' not in server_module._cue_members
+
+    def test_set_cue_device(self, socketio_client):
+        socketio_client.emit('set_cue_device', {
+            'device_id': 'headphones-1'
+        })
+        with server_module._state_lock:
+            assert server_module._cue_device_id == 'headphones-1'
+
+
+# ---------------------------------------------------------------------------
+# TestSetlistPresets
+# ---------------------------------------------------------------------------
+
+
+class TestSetlistPresets:
+    """Setlist-linked preset tests."""
+
+    def test_save_setlist_preset(self, socketio_client):
+        preset = {'controlPoint': {'x': 100, 'y': 200}, 'curveType': 'linear'}
+        socketio_client.emit('save_setlist_preset', {
+            'track_id': 'track123', 'preset': preset
+        })
+        with server_module._state_lock:
+            assert 'track123' in server_module._setlist_presets
+            assert server_module._setlist_presets['track123']['curveType'] == 'linear'
+
+    def test_remove_setlist_preset(self, socketio_client):
+        with server_module._state_lock:
+            server_module._setlist_presets['track123'] = {'x': 1}
+        socketio_client.emit('save_setlist_preset', {
+            'track_id': 'track123', 'preset': None
+        })
+        with server_module._state_lock:
+            assert 'track123' not in server_module._setlist_presets
+
+    def test_setlist_presets_rest(self, client):
+        with server_module._state_lock:
+            server_module._setlist_presets['abc'] = {'x': 1}
+        resp = client.get('/api/setlist-presets')
+        assert resp.status_code == 200
+        assert 'abc' in resp.get_json()
+
+
+# ---------------------------------------------------------------------------
+# TestAutomation
+# ---------------------------------------------------------------------------
+
+
+class TestAutomation:
+    """Crossfade automation tests."""
+
+    def test_set_automation(self, socketio_client):
+        kfs = [{'pct': 0.0, 'x': 100, 'y': 100}, {'pct': 1.0, 'x': 400, 'y': 400}]
+        socketio_client.emit('set_automation', {
+            'keyframes': kfs, 'active': True
+        })
+        with server_module._state_lock:
+            assert len(server_module._automation_keyframes) == 2
+            assert server_module._automation_active is True
+
+    def test_automation_rest(self, client):
+        resp = client.get('/api/automation')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert 'keyframes' in data
+        assert 'active' in data
+
+    def test_interpolate_keyframes(self):
+        kfs = [{'pct': 0.0, 'x': 100, 'y': 100}, {'pct': 1.0, 'x': 400, 'y': 400}]
+        pos = server_module._interpolate_keyframes(kfs, 0.5)
+        assert pos is not None
+        assert abs(pos['x'] - 250) < 1
+        assert abs(pos['y'] - 250) < 1
+
+    def test_interpolate_keyframes_empty(self):
+        assert server_module._interpolate_keyframes([], 0.5) is None
+
+    def test_interpolate_keyframes_edge(self):
+        kfs = [{'pct': 0.2, 'x': 100, 'y': 100}, {'pct': 0.8, 'x': 400, 'y': 400}]
+        # Before first keyframe
+        pos = server_module._interpolate_keyframes(kfs, 0.0)
+        assert pos['x'] == 100
+        # After last keyframe
+        pos = server_module._interpolate_keyframes(kfs, 1.0)
+        assert pos['x'] == 400
+
+
+# ---------------------------------------------------------------------------
+# TestMIDI
+# ---------------------------------------------------------------------------
+
+
+class TestMIDI:
+    """MIDI controller tests."""
+
+    def test_midi_devices_endpoint(self, client):
+        resp = client.get('/api/midi/devices')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert 'available' in data
+        assert 'devices' in data
+
+    def test_set_midi_mapping(self, socketio_client):
+        socketio_client.emit('set_midi_mapping', {
+            'cc': 7, 'target': 'volume', 'device_id': 'd1'
+        })
+        with server_module._state_lock:
+            assert 7 in server_module._midi_mappings
+            assert server_module._midi_mappings[7]['target'] == 'volume'
+
+    def test_remove_midi_mapping(self, socketio_client):
+        with server_module._state_lock:
+            server_module._midi_mappings[7] = {'target': 'volume'}
+        socketio_client.emit('set_midi_mapping', {
+            'cc': 7, 'target': None
+        })
+        with server_module._state_lock:
+            assert 7 not in server_module._midi_mappings
+
+
+# ---------------------------------------------------------------------------
+# TestEnrichDevices
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichDevices:
+    """Test device enrichment includes new fields."""
+
+    def test_enrich_includes_zone_and_cue(self):
+        with server_module._state_lock:
+            server_module._zone_positions['d1'] = {'x': 100, 'y': 200}
+            server_module._cue_members.add('d1')
+        devices = [{'id': 'd1', 'name': 'Speaker 1', 'volume': 1.0}]
+        enriched = server_module._enrich_devices(devices)
+        assert enriched[0]['zone'] == {'x': 100, 'y': 200}
+        assert enriched[0]['cue'] is True
+
+    def test_enrich_includes_min_volume(self):
+        with server_module._state_lock:
+            server_module._min_volumes['d1'] = 0.25
+        devices = [{'id': 'd1', 'name': 'Speaker 1', 'volume': 1.0}]
+        enriched = server_module._enrich_devices(devices)
+        assert enriched[0]['min_volume'] == 0.25
+        # Cleanup
+        with server_module._state_lock:
+            server_module._min_volumes.pop('d1', None)
+
+    def test_enrich_default_min_volume_zero(self):
+        devices = [{'id': 'd_new', 'name': 'Speaker X', 'volume': 1.0}]
+        enriched = server_module._enrich_devices(devices)
+        assert enriched[0]['min_volume'] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestMinVolume
+# ---------------------------------------------------------------------------
+
+
+class TestMinVolume:
+    """Per-device minimum volume floor tests."""
+
+    def test_set_min_volume_ws(self, socketio_client):
+        socketio_client.emit('set_min_volume', {
+            'device_id': 'd1', 'min_volume': 0.3
+        })
+        with server_module._state_lock:
+            assert server_module._min_volumes.get('d1') == 0.3
+            server_module._min_volumes.pop('d1', None)
+
+    def test_set_min_volume_clamped(self, socketio_client):
+        socketio_client.emit('set_min_volume', {
+            'device_id': 'd1', 'min_volume': 1.5
+        })
+        with server_module._state_lock:
+            assert server_module._min_volumes.get('d1') == 1.0
+            server_module._min_volumes.pop('d1', None)
+
+    def test_set_min_volume_negative_clamped(self, socketio_client):
+        socketio_client.emit('set_min_volume', {
+            'device_id': 'd1', 'min_volume': -0.5
+        })
+        with server_module._state_lock:
+            assert server_module._min_volumes.get('d1') == 0.0
+            server_module._min_volumes.pop('d1', None)
+
+    def test_set_min_volume_missing_fields(self, socketio_client):
+        # Should not crash with missing fields
+        socketio_client.emit('set_min_volume', {})
+        socketio_client.emit('set_min_volume', {'device_id': 'd1'})

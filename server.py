@@ -15,11 +15,20 @@ import hashlib
 import base64
 import secrets
 import urllib.parse
+import collections
+import json as _json
+
+# Optional: MIDI controller support
+try:
+    import mido
+    _MIDI_AVAILABLE = True
+except ImportError:
+    _MIDI_AVAILABLE = False
 
 # Suppress noisy pycaw COMError warnings from non-Bluetooth devices
 warnings.filterwarnings("ignore", message="COMError attempting to get property")
 
-from flask import Flask, render_template, jsonify, request, redirect
+from flask import Flask, render_template, jsonify, request, redirect, make_response
 from flask_socketio import SocketIO, emit
 import html
 import requests as http_requests  # avoid collision with flask.request
@@ -248,6 +257,10 @@ class AudioRouter:
         self._device_index_map = {}     # pycaw_device_id -> pyaudio device index
         self._eq_settings_router = {}   # device_id -> {bass, treble, dirty}
         self._eq_filter_state = {}      # device_id -> {bass_state, treble_state, bass_coeffs, treble_coeffs}
+        self._delay_ms = {}             # device_id -> delay in ms (0-500)
+        self._delay_buffers = {}        # device_id -> deque of audio chunk bytes
+        self._effects = {}              # device_id -> {type, rate_hz, depth, phase}
+        self._latency = {}              # device_id -> latest write latency in ms
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -399,6 +412,32 @@ class AudioRouter:
                 'dirty': True,
             }
 
+    def set_delay(self, device_id, delay_ms):
+        """Set delay compensation for a device (0-500ms)."""
+        with self._lock:
+            clamped = max(0.0, min(500.0, float(delay_ms)))
+            self._delay_ms[device_id] = clamped
+            if clamped <= 0:
+                self._delay_buffers.pop(device_id, None)
+
+    def set_effect(self, device_id, effect_type, rate_hz=2.0, depth=0.5):
+        """Set BPM-synced effect for a device."""
+        with self._lock:
+            if not effect_type or effect_type == 'off':
+                self._effects.pop(device_id, None)
+            else:
+                self._effects[device_id] = {
+                    'type': effect_type,
+                    'rate_hz': max(0.1, float(rate_hz)),
+                    'depth': max(0.0, min(1.0, float(depth))),
+                    'phase': 0.0,
+                }
+
+    def get_latency(self):
+        """Return latest per-device write latency."""
+        with self._lock:
+            return dict(self._latency)
+
     @property
     def is_running(self):
         return self._running
@@ -489,55 +528,86 @@ class AudioRouter:
     def _match_devices(self, bt_devices):
         """Match pycaw BT devices to PyAudio output device indices.
 
-        BT devices appear in MME (not WASAPI) with truncated endpoint IDs
-        as their names. We match by comparing pycaw device IDs to MME names.
+        Tries all host APIs — prefers WASAPI (sees all endpoints), then
+        DirectSound, then MME as fallback. Each BT device is matched at
+        most once; first match wins.
         """
         result = {}
         if not self._pa:
             return result
 
-        # Find the MME host API index
-        mme_index = None
+        # Build host-API index map (prefer WASAPI > DirectSound > MME)
+        api_indices = {}
         for i in range(self._pa.get_host_api_count()):
             info = self._pa.get_host_api_info_by_index(i)
-            if info.get("name", "") == "MME":
-                mme_index = i
-                break
+            name = info.get("name", "")
+            api_indices[name] = i
 
-        if mme_index is None:
-            return result
+        preferred_order = [
+            "Windows WASAPI",
+            "Windows DirectSound",
+            "MME",
+        ]
+        ordered_apis = [api_indices[n] for n in preferred_order if n in api_indices]
+        # Add any remaining host APIs not in our preference list
+        for idx in api_indices.values():
+            if idx not in ordered_apis:
+                ordered_apis.append(idx)
 
-        # Collect all MME output devices
-        mme_outputs = []
+        # Collect all output devices grouped by host API
+        outputs_by_api = {idx: [] for idx in ordered_apis}
         for i in range(self._pa.get_device_count()):
             try:
                 info = self._pa.get_device_info_by_index(i)
-                if (info.get("hostApi") == mme_index
+                api = info.get("hostApi")
+                if (api in outputs_by_api
                         and info.get("maxOutputChannels", 0) > 0
-                        and info.get("name", "")):
-                    mme_outputs.append(info)
+                        and info.get("name", "")
+                        and not info.get("isLoopbackDevice", False)):
+                    outputs_by_api[api].append(info)
             except Exception:
                 continue
 
+        print(f"[AudioRouter] Host APIs: {api_indices}")
+        for api_idx in ordered_apis:
+            api_name = next((n for n, i in api_indices.items() if i == api_idx), str(api_idx))
+            devs = outputs_by_api.get(api_idx, [])
+            if devs:
+                print(f"[AudioRouter] {api_name} outputs: {[d['name'] for d in devs]}")
+
+        matched_bt = set()
+        for api_idx in ordered_apis:
+            devs = outputs_by_api.get(api_idx, [])
+            for bt_dev in bt_devices:
+                bt_id = bt_dev["id"]
+                if bt_id in matched_bt:
+                    continue
+                bt_name = bt_dev["name"].lower()
+
+                for pa_dev in devs:
+                    pa_name = pa_dev["name"]
+
+                    # Match 1: endpoint ID prefix (MME truncates to ~31 chars)
+                    if pa_name.startswith("{") and bt_id.lower().startswith(pa_name.lower()):
+                        result[bt_id] = pa_dev["index"]
+                        matched_bt.add(bt_id)
+                        print(f"[AudioRouter] Matched '{bt_dev['name']}' -> "
+                              f"index {pa_dev['index']} (ID prefix)")
+                        break
+
+                    # Match 2: friendly name substring
+                    pa_lower = pa_name.lower()
+                    if bt_name in pa_lower or pa_lower in bt_name:
+                        result[bt_id] = pa_dev["index"]
+                        matched_bt.add(bt_id)
+                        print(f"[AudioRouter] Matched '{bt_dev['name']}' -> "
+                              f"'{pa_name}' index {pa_dev['index']} (name)")
+                        break
+
         for bt_dev in bt_devices:
-            bt_id = bt_dev["id"]        # e.g. "{0.0.0.00000000}.{7ad893b6-69eb-...}"
-            bt_name = bt_dev["name"].lower()
-
-            for mme_dev in mme_outputs:
-                mme_name = mme_dev["name"]
-
-                # Match 1: MME name is a truncated prefix of the pycaw endpoint ID
-                # MME names are max 31 chars, so "{0.0.0.00000000}.{7ad893b6-69eb"
-                # matches pycaw ID "{0.0.0.00000000}.{7ad893b6-69eb-...}"
-                if mme_name.startswith("{") and bt_id.lower().startswith(mme_name.lower()):
-                    result[bt_id] = mme_dev["index"]
-                    break
-
-                # Match 2: friendly name match (case-insensitive substring)
-                mme_lower = mme_name.lower()
-                if bt_name in mme_lower or mme_lower in bt_name:
-                    result[bt_id] = mme_dev["index"]
-                    break
+            if bt_dev["id"] not in result:
+                print(f"[AudioRouter] UNMATCHED: '{bt_dev['name']}' "
+                      f"(id={bt_dev['id'][:40]}...)")
 
         return result
 
@@ -559,6 +629,9 @@ class AudioRouter:
 
         print("[AudioRouter] Capture thread running")
 
+        # Snapshot queue references — avoids list() allocation per chunk
+        queues = list(self._audio_queues.values())
+
         try:
             while self._running:
                 try:
@@ -570,7 +643,7 @@ class AudioRouter:
                     continue
 
                 # Distribute to all output queues
-                for dev_id, q in list(self._audio_queues.items()):
+                for q in queues:
                     try:
                         q.put_nowait(data)
                     except queue.Full:
@@ -674,14 +747,74 @@ class AudioRouter:
                     if fs['treble_coeffs']:
                         self._apply_biquad(audio, fs['treble_coeffs'], fs['treble_state'])
 
+                # Delay compensation
+                with self._lock:
+                    delay_ms = self._delay_ms.get(device_id, 0)
+                if delay_ms > 0:
+                    chunks_needed = max(1, round(
+                        delay_ms * self._sample_rate / (1000 * self.CHUNK)))
+                    if device_id not in self._delay_buffers:
+                        self._delay_buffers[device_id] = collections.deque()
+                    buf = self._delay_buffers[device_id]
+                    buf.append(audio.tobytes())
+                    if len(buf) > chunks_needed:
+                        audio = np.frombuffer(
+                            buf.popleft(), dtype=self.NUMPY_DTYPE).copy()
+                    else:
+                        audio = np.zeros_like(audio)
+
+                # BPM-synced effects
+                with self._lock:
+                    fx = self._effects.get(device_id)
+                    fx_snap = dict(fx) if fx else None
+                if fx_snap:
+                    frames = len(audio) // out_channels
+                    if frames > 0:
+                        rate = fx_snap['rate_hz']
+                        depth = fx_snap['depth']
+                        phase = fx_snap['phase']
+                        t = (np.arange(frames, dtype=np.float32)
+                             / self._sample_rate + phase)
+                        if fx_snap['type'] == 'tremolo':
+                            mod = (1.0 - depth * 0.5
+                                   * (1 + np.sin(2 * np.pi * rate * t)))
+                            for ch in range(out_channels):
+                                audio[ch::out_channels] *= mod
+                        elif (fx_snap['type'] == 'autopan'
+                              and out_channels >= 2):
+                            pan = 0.5 * (1 + np.sin(
+                                2 * np.pi * rate * t))
+                            audio[0::out_channels] *= (
+                                1 - depth * pan).astype(self.NUMPY_DTYPE)
+                            audio[1::out_channels] *= (
+                                1 - depth * (1 - pan)).astype(
+                                    self.NUMPY_DTYPE)
+                        elif fx_snap['type'] == 'filter_sweep':
+                            sweep = 0.5 + 0.5 * np.sin(
+                                2 * np.pi * rate * 0.25 * t)
+                            mod = (1 - depth * 0.5 * (1 - sweep)).astype(
+                                self.NUMPY_DTYPE)
+                            for ch in range(out_channels):
+                                audio[ch::out_channels] *= mod
+                        new_phase = float(t[-1]) % max(
+                            10.0, 1.0 / max(rate, 0.01))
+                        with self._lock:
+                            if device_id in self._effects:
+                                self._effects[device_id]['phase'] = new_phase
+
                 np.clip(audio, -1.0, 1.0, out=audio)
 
+                _t0 = time.perf_counter()
                 try:
                     stream.write(audio.tobytes())
                 except Exception as exc:
                     if self._running:
                         print(f"[AudioRouter] Output write error: {exc}")
                     time.sleep(0.01)
+                    continue
+                _t1 = time.perf_counter()
+                with self._lock:
+                    self._latency[device_id] = round((_t1 - _t0) * 1000, 1)
         finally:
             try:
                 stream.stop_stream()
@@ -717,6 +850,16 @@ _previous_device_ids = set() # for change detection
 _audio_levels = {}           # device_id -> smoothed peak
 _level_decay = 0.85
 _shutdown_event = threading.Event()  # signal background threads to stop
+_zone_positions = {}             # device_id -> {x, y} canvas coords
+_cue_device_id = None            # device used as cue/headphone output
+_cue_members = set()             # device_ids in cue (preview) mode
+_min_volumes = {}                # device_id -> float (0.0-1.0) minimum volume floor
+_setlist_presets = {}            # spotify_track_id -> preset dict
+_automation_keyframes = []       # [{pct: 0-1, x, y}] sorted by pct
+_automation_active = False
+_midi_device_name = None         # selected MIDI input device name
+_midi_mappings = {}              # cc_number -> {target, device_id}
+_midi_thread = None
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -725,10 +868,61 @@ _shutdown_event = threading.Event()  # signal background threads to stop
 SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID', '180f7b3240d7473b9e56aedc227b5f3e')
 SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:5000/spotify/callback'
 SPOTIFY_SCOPES = 'user-read-currently-playing user-modify-playback-state'
+_SPOTIFY_TOKEN_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(sys.argv[0] if not getattr(sys, 'frozen', False)
+                                     else sys.executable)),
+    '.spotify_token.json')
 
 _spotify_lock = threading.Lock()
 _spotify_token = None        # {access_token, refresh_token, expires_at}
 _spotify_code_verifier = None
+
+
+def _save_spotify_token():
+    """Persist refresh token and client ID to disk."""
+    if not _spotify_token or not _spotify_token.get('refresh_token'):
+        return
+    try:
+        data = {
+            'refresh_token': _spotify_token['refresh_token'],
+            'client_id': SPOTIFY_CLIENT_ID,
+        }
+        with open(_SPOTIFY_TOKEN_FILE, 'w') as f:
+            _json.dump(data, f)
+    except Exception:
+        pass  # non-critical
+
+
+def _load_spotify_token():
+    """Load persisted refresh token from disk and refresh access token."""
+    global _spotify_token, SPOTIFY_CLIENT_ID
+    try:
+        with open(_SPOTIFY_TOKEN_FILE, 'r') as f:
+            data = _json.load(f)
+        refresh_token = data.get('refresh_token')
+        saved_client_id = data.get('client_id')
+        if not refresh_token or not saved_client_id:
+            return
+        # Restore client ID if not set via env
+        if SPOTIFY_CLIENT_ID == '180f7b3240d7473b9e56aedc227b5f3e' or not SPOTIFY_CLIENT_ID:
+            SPOTIFY_CLIENT_ID = saved_client_id
+        # Try refreshing with saved token
+        resp = http_requests.post('https://accounts.spotify.com/api/token', data={
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id': SPOTIFY_CLIENT_ID,
+        }, timeout=10)
+        if resp.status_code == 200:
+            tok = resp.json()
+            with _spotify_lock:
+                _spotify_token = {
+                    'access_token': tok['access_token'],
+                    'refresh_token': tok.get('refresh_token', refresh_token),
+                    'expires_at': time.time() + tok.get('expires_in', 3600),
+                }
+                _save_spotify_token()  # update if new refresh token issued
+    except Exception:
+        pass  # file missing or invalid — user will auth normally
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -757,7 +951,7 @@ def _sync_router(devices):
 
 
 def _enrich_devices(devices):
-    """Add mute / EQ / group state to device dicts.  Returns a new list."""
+    """Add EQ / group / zone / cue state to device dicts. Returns a new list."""
     with _state_lock:
         enriched = []
         for d in devices:
@@ -765,6 +959,9 @@ def _enrich_devices(devices):
             did = d2["id"]
             d2["eq"] = dict(_eq_settings.get(did, {"bass": 0.0, "treble": 0.0}))
             d2["group"] = _group_membership.get(did, None)
+            d2["zone"] = _zone_positions.get(did, None)
+            d2["cue"] = did in _cue_members
+            d2["min_volume"] = _min_volumes.get(did, 0.0)
             enriched.append(d2)
         return enriched
 
@@ -878,6 +1075,11 @@ def _audio_level_monitor():
 
             if levels:
                 socketio.emit('audio_levels', levels)
+
+            # Emit latency data alongside levels
+            latency = audio_router.get_latency()
+            if latency:
+                socketio.emit('latency_update', latency)
         except Exception:
             time.sleep(1)
 
@@ -890,7 +1092,11 @@ def _audio_level_monitor():
 @app.route("/")
 def index():
     """Serve the frontend single-page application."""
-    return render_template("index.html")
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/api/devices", methods=["GET"])
@@ -1036,6 +1242,7 @@ def spotify_login():
         'scope': SPOTIFY_SCOPES,
         'code_challenge_method': 'S256',
         'code_challenge': challenge,
+        'show_dialog': 'false',
     })
     return redirect(f'https://accounts.spotify.com/authorize?{params}')
 
@@ -1067,6 +1274,7 @@ def spotify_callback():
                 'refresh_token': data.get('refresh_token'),
                 'expires_at': time.time() + data.get('expires_in', 3600),
             }
+            _save_spotify_token()
     except Exception as exc:
         return f'<p>Error: {html.escape(str(exc))}</p><p><a href="/">Back</a></p>'
     return '<script>window.close();</script><p>Connected! You can close this window.</p>'
@@ -1199,6 +1407,7 @@ def _refresh_spotify_token_locked():
             _spotify_token['expires_at'] = time.time() + data.get('expires_in', 3600)
             if 'refresh_token' in data:
                 _spotify_token['refresh_token'] = data['refresh_token']
+            _save_spotify_token()
         else:
             _spotify_token = None
     except Exception:
@@ -1257,6 +1466,18 @@ def ws_set_volume(data):
         audio_router.set_volume(member_id, volume)
 
 
+@socketio.on("set_min_volume")
+def ws_set_min_volume(data):
+    """Set minimum volume floor for a device."""
+    device_id = data.get("device_id")
+    min_vol = data.get("min_volume")
+    if device_id is None or min_vol is None:
+        return
+    min_vol = max(0.0, min(1.0, float(min_vol)))
+    with _state_lock:
+        _min_volumes[device_id] = min_vol
+
+
 @socketio.on("refresh_devices")
 def ws_refresh_devices():
     """Rescan devices and emit updated list."""
@@ -1268,7 +1489,6 @@ def ws_refresh_devices():
         "running": audio_router.is_running,
         "outputs": audio_router.active_outputs,
     })
-
 
 
 @socketio.on("set_eq")
@@ -1335,8 +1555,259 @@ def ws_delete_group(data):
             del _device_groups[group_id]
 
 
+@socketio.on("set_delay")
+def ws_set_delay(data):
+    """Set delay compensation for a speaker (0-500ms)."""
+    device_id = data.get("device_id")
+    delay_ms = data.get("delay_ms", 0)
+    if device_id is None:
+        return
+    delay_ms = max(0.0, min(500.0, float(delay_ms)))
+    audio_router.set_delay(device_id, delay_ms)
+
+
+@socketio.on("set_zone_position")
+def ws_set_zone_position(data):
+    """Set 2D canvas position for a speaker (zone mapping)."""
+    device_id = data.get("device_id")
+    x = data.get("x")
+    y = data.get("y")
+    if device_id is None or x is None or y is None:
+        return
+    with _state_lock:
+        _zone_positions[device_id] = {"x": float(x), "y": float(y)}
+    socketio.emit("zone_update", _get_zone_snapshot())
+
+
+@socketio.on("set_effect")
+def ws_set_effect(data):
+    """Set BPM-synced effect for a device."""
+    device_id = data.get("device_id")
+    effect_type = data.get("type", "off")
+    rate_hz = data.get("rate_hz", 2.0)
+    depth = data.get("depth", 0.5)
+    if device_id is None:
+        return
+    audio_router.set_effect(device_id, effect_type, rate_hz, depth)
+
+
+@socketio.on("set_cue")
+def ws_set_cue(data):
+    """Toggle cue/preview mode for a device."""
+    device_id = data.get("device_id")
+    enabled = data.get("enabled", False)
+    if device_id is None:
+        return
+    with _state_lock:
+        if enabled:
+            _cue_members.add(device_id)
+        else:
+            _cue_members.discard(device_id)
+    socketio.emit("cue_update", {"cue_members": list(_cue_members),
+                                  "cue_device": _cue_device_id})
+
+
+@socketio.on("set_cue_device")
+def ws_set_cue_device(data):
+    """Select which output device serves as the cue/headphone output."""
+    global _cue_device_id
+    with _state_lock:
+        _cue_device_id = data.get("device_id")
+    socketio.emit("cue_update", {"cue_members": list(_cue_members),
+                                  "cue_device": _cue_device_id})
+
+
+@socketio.on("save_setlist_preset")
+def ws_save_setlist_preset(data):
+    """Link/unlink a mixer preset to a Spotify track."""
+    track_id = data.get("track_id")
+    preset = data.get("preset")
+    if not track_id:
+        return
+    with _state_lock:
+        if preset:
+            _setlist_presets[track_id] = preset
+        else:
+            _setlist_presets.pop(track_id, None)
+    socketio.emit("setlist_update", _get_setlist_snapshot())
+
+
+@socketio.on("set_automation")
+def ws_set_automation(data):
+    """Set crossfade automation keyframes."""
+    global _automation_active
+    keyframes = data.get("keyframes", [])
+    active = data.get("active", False)
+    with _state_lock:
+        _automation_keyframes.clear()
+        _automation_keyframes.extend(
+            sorted(keyframes, key=lambda k: k.get('pct', 0)))
+        _automation_active = active
+    socketio.emit("automation_update", {
+        "keyframes": list(_automation_keyframes),
+        "active": _automation_active})
+
+
+@socketio.on("set_midi_device")
+def ws_set_midi_device(data):
+    """Select a MIDI input device for controller mapping."""
+    global _midi_device_name
+    name = data.get("name")
+    with _state_lock:
+        _midi_device_name = name
+    _start_midi_listener()
+
+
+@socketio.on("set_midi_mapping")
+def ws_set_midi_mapping(data):
+    """Map a MIDI CC number to a mixer control."""
+    cc = data.get("cc")
+    target = data.get("target")  # 'crossfade_x', 'crossfade_y', 'volume'
+    device_id = data.get("device_id")
+    if cc is None:
+        return
+    with _state_lock:
+        if target:
+            _midi_mappings[int(cc)] = {
+                "target": target, "device_id": device_id}
+        else:
+            _midi_mappings.pop(int(cc), None)
+
+
+def _get_zone_snapshot():
+    """Return zone positions under lock."""
+    with _state_lock:
+        return dict(_zone_positions)
+
+
+def _get_setlist_snapshot():
+    """Return setlist presets under lock."""
+    with _state_lock:
+        return dict(_setlist_presets)
+
+
+# ---------------------------------------------------------------------------
+# REST endpoints for new DJ features
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/delay', methods=['POST'])
+def api_set_delay():
+    """Set delay compensation for a speaker."""
+    data = request.get_json(silent=True) or {}
+    device_id = data.get('device_id')
+    delay_ms = data.get('delay_ms', 0)
+    if not device_id:
+        return jsonify({'error': 'device_id required'}), 400
+    audio_router.set_delay(device_id, delay_ms)
+    return jsonify({'success': True})
+
+
+@app.route('/api/latency')
+def api_latency():
+    """Get per-speaker write latency measurements."""
+    return jsonify(audio_router.get_latency())
+
+
+@app.route('/api/midi/devices')
+def api_midi_devices():
+    """List available MIDI input devices."""
+    if not _MIDI_AVAILABLE:
+        return jsonify({'available': False, 'devices': []})
+    try:
+        inputs = mido.get_input_names()
+    except Exception:
+        inputs = []
+    return jsonify({
+        'available': True, 'devices': inputs,
+        'selected': _midi_device_name})
+
+
+@app.route('/api/zone-positions', methods=['GET'])
+def api_get_zone_positions():
+    """Get all speaker zone positions."""
+    return jsonify(_get_zone_snapshot())
+
+
+@app.route('/api/zone-positions', methods=['POST'])
+def api_set_zone_positions():
+    """Set speaker zone positions."""
+    data = request.get_json(silent=True) or {}
+    with _state_lock:
+        for did, pos in data.items():
+            _zone_positions[did] = {
+                "x": float(pos.get("x", 250)),
+                "y": float(pos.get("y", 250))}
+    return jsonify({'success': True})
+
+
+@app.route('/api/setlist-presets')
+def api_setlist_presets():
+    """Get all setlist-linked presets."""
+    return jsonify(_get_setlist_snapshot())
+
+
+@app.route('/api/automation')
+def api_automation():
+    """Get current automation keyframes."""
+    with _state_lock:
+        return jsonify({
+            "keyframes": list(_automation_keyframes),
+            "active": _automation_active})
+
+
+# ---------------------------------------------------------------------------
+# MIDI listener
+# ---------------------------------------------------------------------------
+
+
+def _start_midi_listener():
+    """Start or restart the MIDI listener thread."""
+    global _midi_thread
+    if not _MIDI_AVAILABLE or not _midi_device_name:
+        return
+    _midi_thread = threading.Thread(target=_midi_worker, daemon=True)
+    _midi_thread.start()
+
+
+def _midi_worker():
+    """Thread: listen for MIDI CC messages and map to mixer controls."""
+    try:
+        with mido.open_input(_midi_device_name) as port:
+            print(f"[MIDI] Listening on '{_midi_device_name}'")
+            for msg in port:
+                if _shutdown_event.is_set():
+                    break
+                if _midi_device_name != port.name:
+                    break  # Device changed, exit to be restarted
+                if msg.type == 'control_change':
+                    _handle_midi_cc(msg.control, msg.value / 127.0)
+    except Exception as exc:
+        print(f"[MIDI] Error: {exc}")
+
+
+def _handle_midi_cc(cc, value):
+    """Process a MIDI CC message through the mapping table."""
+    with _state_lock:
+        mapping = _midi_mappings.get(cc)
+    if not mapping:
+        return
+    target = mapping['target']
+    if target == 'crossfade_x':
+        socketio.emit('midi_cc', {'target': 'crossfade_x', 'value': value})
+    elif target == 'crossfade_y':
+        socketio.emit('midi_cc', {'target': 'crossfade_y', 'value': value})
+    elif target == 'volume' and mapping.get('device_id'):
+        audio_router.set_volume(mapping['device_id'], value)
+        socketio.emit('midi_cc', {
+            'target': 'volume',
+            'device_id': mapping['device_id'],
+            'value': value})
+
+
 def _spotify_poller():
     """Background thread: polls Spotify every 3s, emits via WebSocket."""
+    last_setlist_track = None
     while not _shutdown_event.is_set():
         _shutdown_event.wait(timeout=3)
         if _shutdown_event.is_set():
@@ -1354,17 +1825,60 @@ def _spotify_poller():
                 continue
             data = resp.json()
             item = data.get('item', {})
+            track_id = item.get('id', '')
+            progress_ms = data.get('progress_ms', 0)
+            duration_ms = item.get('duration_ms', 0)
             socketio.emit('spotify_update', {
                 'is_playing': data.get('is_playing', False),
                 'track': item.get('name', ''),
                 'artist': ', '.join(a['name'] for a in item.get('artists', [])),
                 'album_art': (item.get('album', {}).get('images', [{}])[0].get('url', '')),
-                'progress_ms': data.get('progress_ms', 0),
-                'duration_ms': item.get('duration_ms', 0),
-                'track_id': item.get('id', ''),
+                'progress_ms': progress_ms,
+                'duration_ms': duration_ms,
+                'track_id': track_id,
             })
+            # Setlist preset matching — only emit once per track change
+            if track_id and track_id != last_setlist_track:
+                last_setlist_track = track_id
+                with _state_lock:
+                    matched = _setlist_presets.get(track_id)
+                if matched:
+                    socketio.emit('setlist_preset_match', {
+                        'track_id': track_id, 'preset': matched})
+            # Automation playback
+            with _state_lock:
+                if _automation_active and _automation_keyframes and duration_ms:
+                    pct = progress_ms / duration_ms
+                    kfs = list(_automation_keyframes)
+                    # Interpolate position from keyframes
+                    if kfs:
+                        pos = _interpolate_keyframes(kfs, pct)
+                        if pos:
+                            socketio.emit('automation_position', pos)
         except Exception:
             pass
+
+
+def _interpolate_keyframes(keyframes, pct):
+    """Interpolate x,y position from sorted keyframes at given percentage."""
+    if not keyframes:
+        return None
+    if pct <= keyframes[0].get('pct', 0):
+        return {'x': keyframes[0].get('x', 250), 'y': keyframes[0].get('y', 250)}
+    if pct >= keyframes[-1].get('pct', 1):
+        return {'x': keyframes[-1].get('x', 250), 'y': keyframes[-1].get('y', 250)}
+    for i in range(len(keyframes) - 1):
+        p0 = keyframes[i].get('pct', 0)
+        p1 = keyframes[i + 1].get('pct', 1)
+        if p0 <= pct <= p1:
+            t = (pct - p0) / max(p1 - p0, 0.001)
+            return {
+                'x': keyframes[i].get('x', 250) + t * (
+                    keyframes[i + 1].get('x', 250) - keyframes[i].get('x', 250)),
+                'y': keyframes[i].get('y', 250) + t * (
+                    keyframes[i + 1].get('y', 250) - keyframes[i].get('y', 250)),
+            }
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1407,6 +1921,13 @@ if __name__ == "__main__":
 
     # Start audio level metering background thread
     threading.Thread(target=_audio_level_monitor, daemon=True).start()
+
+    # Restore Spotify session from saved token (skips re-auth if valid)
+    _load_spotify_token()
+    if _spotify_token:
+        print("[Spotify] Restored session from saved token — no login needed")
+    else:
+        print("[Spotify] No saved session — click Connect Spotify to authenticate")
 
     # Start Spotify poller
     threading.Thread(target=_spotify_poller, daemon=True).start()
