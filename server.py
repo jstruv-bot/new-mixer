@@ -1145,6 +1145,25 @@ def spotify_seek():
     return jsonify({'success': True})
 
 
+@app.route('/api/spotify/audio-features/<track_id>')
+def spotify_audio_features(track_id):
+    """Get audio features (BPM/tempo) for a track."""
+    token = _get_spotify_token()
+    if not token:
+        return jsonify({'error': 'Not authenticated'}), 401
+    try:
+        resp = http_requests.get(
+            f'https://api.spotify.com/v1/audio-features/{track_id}',
+            headers={'Authorization': f'Bearer {token}'}, timeout=5
+        )
+        if resp.status_code != 200:
+            return jsonify({'tempo': 120})  # fallback BPM
+        data = resp.json()
+        return jsonify({'tempo': data.get('tempo', 120)})
+    except Exception:
+        return jsonify({'tempo': 120})
+
+
 def _get_spotify_token():
     """Get valid Spotify access token, refreshing if needed."""
     global _spotify_token
@@ -1358,6 +1377,7 @@ def _spotify_poller():
                 'album_art': (item.get('album', {}).get('images', [{}])[0].get('url', '')),
                 'progress_ms': data.get('progress_ms', 0),
                 'duration_ms': item.get('duration_ms', 0),
+                'track_id': item.get('id', ''),
             })
         except Exception:
             pass

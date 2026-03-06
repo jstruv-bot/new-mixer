@@ -244,6 +244,7 @@
             <option value="logarithmic">Logarithmic</option>
             <option value="equal-power">Equal Power</option>
         </select>
+        <button id="btn-bounce" type="button" title="Auto-bounce between speakers">Bounce: Off</button>
         <button id="btn-groups" type="button">Groups</button>
         <button id="btn-refresh" type="button">Refresh Devices</button>
     </div>
@@ -362,7 +363,10 @@
         activePreset:   -1,
         presetAnimating: false,
         presetAnimTarget: null,
-        focusedElement: null     // {type: 'control'} or {type: 'device', index}
+        focusedElement: null,    // {type: 'control'} or {type: 'device', index}
+        autoBounce:     'off',   // 'off' | 'smooth' | 'beat'
+        bounceBPM:      120,     // current track BPM
+        bounceTrackId:  '',      // last track we fetched BPM for
     };
 
     /** Rebuild the deviceMap whenever the device list changes. */
@@ -482,6 +486,14 @@
             spotifyDurationMs = data.duration_ms;
             spotifyLastUpdate = Date.now();
             spotifyEls.playPause.innerHTML = spotifyPlaying ? '&#9646;&#9646;' : '&#9654;';
+            // Fetch BPM when track changes
+            if (data.track_id && data.track_id !== state.bounceTrackId) {
+                state.bounceTrackId = data.track_id;
+                fetch('/api/spotify/audio-features/' + data.track_id)
+                    .then(r => r.json())
+                    .then(d => { state.bounceBPM = d.tempo || 120; })
+                    .catch(() => { state.bounceBPM = 120; });
+            }
         } else {
             spotifyEls.widget.style.display = 'none';
         }
@@ -1053,6 +1065,20 @@
         updateVolumes();
     });
 
+    // ── Auto-bounce toggle ──────────────────────────────────────────────
+    const btnBounce = document.getElementById('btn-bounce');
+    const bounceModes = ['off', 'smooth', 'beat'];
+    const bounceLabels = { off: 'Bounce: Off', smooth: 'Bounce: Smooth', beat: 'Bounce: Beat' };
+
+    btnBounce.addEventListener('click', () => {
+        const idx = (bounceModes.indexOf(state.autoBounce) + 1) % bounceModes.length;
+        state.autoBounce = bounceModes[idx];
+        btnBounce.textContent = bounceLabels[state.autoBounce];
+        btnBounce.style.borderColor = state.autoBounce !== 'off'
+            ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        btnBounce.style.color = state.autoBounce !== 'off' ? '#1ed760' : '#00d4ff';
+    });
+
     // ── Drag event handlers ────────────────────────────────────────────
 
     /**
@@ -1535,6 +1561,44 @@
                 state.controlPoint.y += dy * 0.15;
             }
             updateVolumes();
+        }
+
+        // Auto-bounce — move control point between speakers when music is playing
+        if (state.autoBounce !== 'off' && spotifyPlaying && !state.isDragging) {
+            const n = state.devices.length;
+            if (n >= 2) {
+                const now = performance.now() / 1000; // seconds
+
+                if (state.autoBounce === 'smooth') {
+                    // Smooth sine oscillation — period ~4s, traces circular path through devices
+                    const period = 4.0;
+                    const t = (now % period) / period;           // 0..1 repeating
+                    const angle = t * 2 * Math.PI - Math.PI / 2; // full circle
+                    const targetX = CENTER + RING_RADIUS * 0.75 * Math.cos(angle);
+                    const targetY = CENTER + RING_RADIUS * 0.75 * Math.sin(angle);
+                    state.controlPoint.x += (targetX - state.controlPoint.x) * 0.08;
+                    state.controlPoint.y += (targetY - state.controlPoint.y) * 0.08;
+
+                } else if (state.autoBounce === 'beat') {
+                    // Beat-synced — snap to next device on each beat
+                    const bps = state.bounceBPM / 60;
+                    const beatPhase = (now * bps) % n;  // 0..n repeating
+                    const beatIndex = Math.floor(beatPhase);
+                    const beatFrac = beatPhase - beatIndex;
+                    const nextIndex = (beatIndex + 1) % n;
+
+                    const posA = devicePosition(beatIndex, n);
+                    const posB = devicePosition(nextIndex, n);
+                    // Smooth ease between devices within each beat
+                    const ease = beatFrac * beatFrac * (3 - 2 * beatFrac); // smoothstep
+                    const targetX = posA.x + (posB.x - posA.x) * ease;
+                    const targetY = posA.y + (posB.y - posA.y) * ease;
+                    state.controlPoint.x += (targetX - state.controlPoint.x) * 0.15;
+                    state.controlPoint.y += (targetY - state.controlPoint.y) * 0.15;
+                }
+
+                updateVolumes();
+            }
         }
 
         drawMixer();
