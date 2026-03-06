@@ -282,7 +282,8 @@
             <span id="stereo-sep-val" style="min-width:28px;">0%</span>
         </span>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
-        <button id="btn-dj" type="button" title="DJ features menu">DJ</button>
+        <button id="btn-dj" type="button" title="Cue &amp; latency panels">More</button>
+        <button id="btn-party" type="button" title="Party Mode: auto-DJ + full stereo separation">Party</button>
         <button id="btn-refresh" type="button">Refresh Devices</button>
     </div>
 
@@ -634,9 +635,8 @@
 
     // Audio energy for Auto-DJ
     socket.on("audio_energy", (data) => {
-        if (state.autoDJ) {
-            state.djEnergy = data.energy || 0;
-        }
+        state.djEnergy = data.energy || 0;
+        if (state.djEnergy > 0.01) markDirty();
     });
 
     // Progress bar interpolation + time display
@@ -968,6 +968,24 @@
         ctx.fillStyle = _ringGlow;
         ctx.fill();
 
+        // Energy-reactive ring pulse
+        const energy = state.djEnergy || 0;
+        if (energy > 0.01) {
+            const pulseRadius = RING_RADIUS + energy * 15;
+            const pulseGlow = ctx.createRadialGradient(
+                CENTER, CENTER, RING_RADIUS - 10,
+                CENTER, CENTER, pulseRadius
+            );
+            const alpha = energy * 0.15;
+            pulseGlow.addColorStop(0, 'rgba(30, 215, 96, 0)');
+            pulseGlow.addColorStop(0.5, 'rgba(30, 215, 96, ' + alpha + ')');
+            pulseGlow.addColorStop(1, 'rgba(30, 215, 96, 0)');
+            ctx.beginPath();
+            ctx.arc(CENTER, CENTER, pulseRadius, 0, Math.PI * 2);
+            ctx.fillStyle = pulseGlow;
+            ctx.fill();
+        }
+
         const n = state.devices.length;
 
         if (n === 0) {
@@ -1097,6 +1115,23 @@
                     ctx.textBaseline = "middle";
                     ctx.fillText(pct + "%", pos.x, pos.y);
                 }
+            }
+
+            // Energy pulse around device node
+            const level = state.displayLevels[id] || 0;
+            if (level > 0.05) {
+                ctx.save();
+                const nodeGlow = ctx.createRadialGradient(
+                    pos.x, pos.y, DEVICE_RADIUS,
+                    pos.x, pos.y, DEVICE_RADIUS + level * 20
+                );
+                nodeGlow.addColorStop(0, 'rgba(0, 212, 255, ' + (level * 0.3) + ')');
+                nodeGlow.addColorStop(1, 'rgba(0, 212, 255, 0)');
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, DEVICE_RADIUS + level * 20, 0, Math.PI * 2);
+                ctx.fillStyle = nodeGlow;
+                ctx.fill();
+                ctx.restore();
             }
 
             // Device name label (always shown)
@@ -1261,6 +1296,40 @@
             btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
             btnBounce.style.color = '#00d4ff';
             bounceSettings.classList.remove('active');
+        }
+    });
+
+    // ── Party Mode ──────────────────────────────────────────────────
+    const btnParty = document.getElementById('btn-party');
+    let partyMode = false;
+
+    btnParty.addEventListener('click', () => {
+        partyMode = !partyMode;
+        btnParty.style.borderColor = partyMode ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
+        btnParty.style.color = partyMode ? '#1ed760' : '#00d4ff';
+        btnParty.textContent = partyMode ? 'Party: On' : 'Party';
+
+        if (partyMode) {
+            // Enable Auto-DJ
+            state.autoDJ = true;
+            btnAutoDJ.textContent = 'Auto-DJ: On';
+            btnAutoDJ.style.borderColor = 'rgba(30, 215, 96, 0.6)';
+            btnAutoDJ.style.color = '#1ed760';
+            // Disable bounce (conflicts with Auto-DJ)
+            state.autoBounce = 'off';
+            btnBounce.textContent = 'Bounce: Off';
+            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
+            btnBounce.style.color = '#00d4ff';
+            bounceSettings.classList.remove('active');
+            // Set stereo separation to 80%
+            state.stereoSep = 0.8;
+            document.getElementById('stereo-sep').value = 80;
+            document.getElementById('stereo-sep-val').textContent = '80%';
+            socket.emit('set_stereo_separation', { value: 0.8 });
+            localStorage.setItem('mixer-stereo-sep', '0.8');
+            showToast('Party Mode activated');
+        } else {
+            showToast('Party Mode deactivated');
         }
     });
 
