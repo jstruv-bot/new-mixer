@@ -1,0 +1,8 @@
+flask>=3.0
+flask-socketio>=5.3
+pycaw>=20240210
+comtypes>=1.4
+pyinstaller>=6.0
+PyAudioWPatch>=0.2.12
+numpy>=1.26
+requests>=2.31
