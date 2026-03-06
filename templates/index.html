@@ -705,19 +705,19 @@
      * @returns {number}  Raw weight (higher = louder).
      */
     function computeWeight(dist, curveType) {
-        const maxDist = RING_RADIUS;
+        const maxDist = RING_RADIUS * 2;   // full diameter — max possible distance
+        const ratio = Math.min(dist / maxDist, 1.0);
         switch (curveType) {
             case 'linear':
-                return Math.max(0, 1 - dist / maxDist);
+                return Math.max(0.05, 1 - ratio);
             case 'logarithmic':
-                return 1.0 / (1 + 2.0 * Math.log(1 + dist));
+                return 1.0 / (1 + 1.5 * Math.log(1 + dist * 0.02));
             case 'equal-power': {
-                const ratio = Math.min(dist / maxDist, 1.0);
-                return Math.cos(ratio * Math.PI / 2) ** 2;
+                return Math.cos(ratio * Math.PI / 2.2) ** 2;
             }
             case 'inverse-square':
             default:
-                return 1.0 / (dist * dist + 100);
+                return 1.0 / (1 + (dist * dist) / 80000);
         }
     }
 
