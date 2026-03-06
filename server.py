@@ -631,10 +631,6 @@ class AudioRouter:
 
         # Snapshot queue references — avoids list() allocation per chunk
         queues = list(self._audio_queues.values())
-        # Noise gate: suppress quiet system sounds (dings, notification bleeps)
-        NOISE_GATE_THRESHOLD = 0.005  # ~-46dB — well below music, catches UI sounds
-        silence = b'\x00' * (self.CHUNK * self._channels
-                             * np.dtype(self.NUMPY_DTYPE).itemsize)
 
         try:
             while self._running:
@@ -645,12 +641,6 @@ class AudioRouter:
                         print(f"[AudioRouter] Capture read error: {exc}")
                     time.sleep(0.01)
                     continue
-
-                # Noise gate — replace quiet chunks with silence
-                peak = np.max(np.abs(
-                    np.frombuffer(data, dtype=self.NUMPY_DTYPE)))
-                if peak < NOISE_GATE_THRESHOLD:
-                    data = silence
 
                 # Distribute to all output queues
                 for q in queues:
