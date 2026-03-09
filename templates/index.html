@@ -145,33 +145,6 @@
         .eq-slider-row input[type=range] { flex: 1; accent-color: #00d4ff; }
         .eq-slider-row span { min-width: 30px; text-align: right; font-size: 0.8rem; color: #c0c0d8; }
 
-        /* ── Preset Bar ──────────────────────────────────────── */
-        .preset-bar {
-            margin-top: 0.8rem;
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            font-size: 0.85rem;
-            color: #8888aa;
-        }
-        .preset-slots { display: flex; gap: 0.3rem; }
-        .preset-slot {
-            width: 24px; height: 24px; border-radius: 50%;
-            border: 1px solid rgba(0,212,255,0.3);
-            background: transparent;
-            color: #8888aa;
-            font-size: 0.7rem;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; transition: all 0.2s;
-        }
-        .preset-slot.filled { background: rgba(0,212,255,0.15); color: #00d4ff; border-color: #00d4ff; }
-        .preset-slot.active { background: rgba(0,212,255,0.3); box-shadow: 0 0 6px rgba(0,212,255,0.4); }
-        .preset-toast {
-            font-size: 0.8rem; color: #00d4ff; opacity: 0;
-            transition: opacity 0.3s;
-        }
-        .preset-toast.show { opacity: 1; }
-
         /* ── Spotify Widget (Now Playing — main UI element) ── */
         .spotify-widget {
             margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
@@ -275,7 +248,6 @@
             <option value="equal-power">Equal Power</option>
         </select>
         <button id="btn-bounce" type="button" title="Auto-bounce between speakers">Bounce: Off</button>
-        <button id="btn-autodj" type="button" title="Auto-DJ: energy-reactive crossfading between speakers">Auto-DJ: Off</button>
         <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#888;" title="Stereo separation: 0% = mono, 100% = full L/R split">
             <label for="stereo-sep" style="white-space:nowrap;">3D:</label>
             <input type="range" id="stereo-sep" min="0" max="100" value="0" step="5" style="width:60px;height:14px;accent-color:#00d4ff;">
@@ -283,8 +255,8 @@
         </span>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
         <button id="btn-dj" type="button" title="Cue &amp; latency panels">More</button>
-        <button id="btn-party" type="button" title="Party Mode: auto-DJ + full stereo separation">Party</button>
         <button id="btn-viz" type="button" title="Visualizer settings">Viz</button>
+        <a href="/perform" id="btn-perform" style="background:rgba(30,215,96,0.12);color:#1ed760;border:1px solid rgba(30,215,96,0.3);padding:0.5rem 1.2rem;border-radius:6px;font-size:0.85rem;text-decoration:none;cursor:pointer;">Perform</a>
         <button id="btn-refresh" type="button">Refresh Devices</button>
     </div>
 
@@ -299,12 +271,6 @@
         <span id="bounce-radius-val" class="val">75%</span>
         <label>BPM:</label>
         <input type="number" id="bounce-bpm" min="40" max="300" value="120" step="1" style="width:50px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;text-align:center;font-size:0.75rem;">
-    </div>
-
-    <div class="preset-bar">
-        <span class="preset-label">Presets:</span>
-        <div class="preset-slots" id="preset-slots"></div>
-        <span id="preset-toast" class="preset-toast"></span>
     </div>
 
     <div id="router-status" class="router-status">
@@ -375,16 +341,6 @@
             <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-flash" checked> Beat Flash</label>
             <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-drift" checked> Particle Drift</label>
         </div>
-        <div style="margin:8px 0 4px;font-size:0.75rem;color:#888;">Fullscreen Mode</div>
-        <div class="eq-slider-row">
-            <select id="viz-fsmode" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
-                <option value="0">Radial Spectrum</option>
-                <option value="1">Particle Nebula</option>
-                <option value="2">Waveform Terrain</option>
-                <option value="3">Geometric Kaleidoscope</option>
-                <option value="4">Frequency Waterfall</option>
-            </select>
-        </div>
         <div class="eq-slider-row">
             <label>Theme</label>
             <select id="viz-theme" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
@@ -394,7 +350,6 @@
                 <option value="3">Monochrome</option>
             </select>
         </div>
-        <button id="viz-fullscreen-btn" type="button" style="width:100%;margin-top:8px;padding:6px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:6px;color:#00d4ff;cursor:pointer;">Enter Fullscreen (V)</button>
     </div>
 
     <div id="spotify-widget" class="spotify-widget" style="display:none;">
@@ -497,20 +452,13 @@
         minVolumes:     JSON.parse(localStorage.getItem('mixer-minvols') || '{}'),  // device_id -> 0-1
         eqTarget:       null,    // device_id of currently open EQ panel
         restoredDevice: null,    // {id, until} for restore flash animation
-        presets:        JSON.parse(localStorage.getItem('mixer-presets') || 'null') || new Array(9).fill(null),
-        activePreset:   -1,
-        presetAnimating: false,
-        presetAnimTarget: null,
         autoBounce:     'off',   // 'off' | 'smooth' | 'beat'
         bounceSpeed:    parseFloat(localStorage.getItem('mixer-bounce-speed') || '1.0'),
         bounceRadius:   parseFloat(localStorage.getItem('mixer-bounce-radius') || '0.75'),
         bouncePattern:  localStorage.getItem('mixer-bounce-pattern') || 'circle',
         bounceBPM:      parseInt(localStorage.getItem('mixer-bounce-bpm') || '120'),
-        // Auto-DJ: energy-reactive crossfading
-        autoDJ:         false,
-        djPrimarySpeaker: 0,     // index of current "home" speaker
-        djEnergy:       0,       // smoothed energy level from backend (0-1)
-        djLastTrackId:  '',      // detect track changes for rotation
+        // Audio energy for visualizer effects
+        vizEnergy:      0,       // smoothed energy level from backend (0-1)
         // 3D spatial audio
         panPositions:   JSON.parse(localStorage.getItem('mixer-pans') || '{}'),  // device_id -> pan (-1..+1)
         stereoSep:      parseFloat(localStorage.getItem('mixer-stereo-sep') || '0'),
@@ -524,7 +472,6 @@
         currentTrackId: '',
         // Visualizer
         vizMode:        parseInt(localStorage.getItem('mixer-viz-mode') || '0'),
-        vizFullscreen:  false,
         vizSpectrum:    new Float32Array(8),
         vizBeat:        false,
         vizBPM:         0,
@@ -536,19 +483,10 @@
             particleDrift: localStorage.getItem('mixer-viz-particleDrift') !== 'false',
         },
         vizIntensity:   parseFloat(localStorage.getItem('mixer-viz-intensity') || '0.6'),
-        vizFsMode:      parseInt(localStorage.getItem('mixer-viz-fsmode') || '0'),
         vizThemeIdx:    parseInt(localStorage.getItem('mixer-viz-theme') || '0'),
         vizBeatFlashAlpha: 0,
         vizParticles:   [],
         vizWaveformAngle: 0,
-        vizModeNameAlpha: 0,
-        vizModeNameText: '',
-        vizSpotifyOverlayAlpha: 0,
-        vizFsParticles: [],         // separate particle pool for fullscreen
-        vizTerrainLines: [],        // history buffer for waveform terrain
-        vizWaterfallHistory: [],    // history buffer for frequency waterfall
-        vizKaleidoAngle: 0,         // rotation for kaleidoscope
-        vizKaleidoShatter: 0,       // shatter animation state
     };
 
     const VIZ_THEMES = [
@@ -557,8 +495,6 @@
         { name: 'Neon',       primary: '#ff006e', secondary: '#39ff14', accent: '#bf00ff', background: '#0a001a', beat: '#39ff14' },
         { name: 'Monochrome', primary: '#ffffff', secondary: '#888888', accent: '#cccccc', background: '#0a0a0a', beat: '#ffffff' },
     ];
-    const VIZ_FS_MODES = ['Radial Spectrum', 'Particle Nebula', 'Waveform Terrain', 'Geometric Kaleidoscope', 'Frequency Waterfall'];
-
     /** Rebuild the deviceMap whenever the device list changes. */
     function rebuildDeviceMap() {
         state.deviceMap.clear();
@@ -703,29 +639,15 @@
             spotifyLastUpdate = Date.now();
             spotifyEls.playPause.innerHTML = spotifyPlaying ? '&#9646;&#9646;' : '&#9654;';
             state.currentTrackId = data.track_id || '';
-            // Show now-playing overlay in fullscreen on track change
-            if (state.vizFullscreen && data.track_id !== state._vizLastOverlayTrackId) {
-                state._vizLastOverlayTrackId = data.track_id;
-                state.vizSpotifyOverlayAlpha = 1.0;
-                state._vizSpotifyShowTimer = 0;
-            }
-            // Auto-DJ: rotate primary speaker on track change
-            if (state.autoDJ && data.track_id && data.track_id !== state.djLastTrackId) {
-                state.djLastTrackId = data.track_id;
-                const n = state.devices.length;
-                if (n > 1) {
-                    state.djPrimarySpeaker = (state.djPrimarySpeaker + 1) % n;
-                }
-            }
         } else {
             spotifyEls.widget.style.display = 'none';
         }
     });
 
-    // Audio energy for Auto-DJ
+    // Audio energy for visualizer effects
     socket.on("audio_energy", (data) => {
-        state.djEnergy = data.energy || 0;
-        if (state.djEnergy > 0.01) markDirty();
+        state.vizEnergy = data.energy || 0;
+        if (state.vizEnergy > 0.01) markDirty();
     });
 
     // Spectrum + beat data for visualizer
@@ -1059,7 +981,7 @@
             }
         } else {
             // Fallback: uniform pulse with energy
-            const e = state.djEnergy || 0;
+            const e = state.vizEnergy || 0;
             bars.fill(e);
         }
 
@@ -1094,7 +1016,7 @@
 
     function drawWaveformOrbit(intensity, theme) {
         const spectrum = state.vizSpectrum;
-        const energy = state.djEnergy || 0;
+        const energy = state.vizEnergy || 0;
         const hasSpectrum = state.vizMode >= 1;
         const baseRadius = RING_RADIUS * 0.45;
         const points = 128;
@@ -1170,7 +1092,7 @@
     }
 
     function drawParticleDrift(intensity, theme) {
-        const energy = state.djEnergy || 0;
+        const energy = state.vizEnergy || 0;
         const maxParticles = 100;
         const particles = state.vizParticles;
 
@@ -1240,570 +1162,6 @@
         ctx.restore();
     }
 
-    // ── Fullscreen visualizer ────────────────────────────────────────
-    let _fsRotation = 0;  // persistent rotation for fullscreen modes
-    let _fsBeatScale = 1.0;  // beat-triggered scale pulse
-
-    function enterVizFullscreen() {
-        state.vizFullscreen = true;
-        canvas.style.position = 'fixed';
-        canvas.style.top = '0';
-        canvas.style.left = '0';
-        canvas.style.width = '100vw';
-        canvas.style.height = '100vh';
-        canvas.style.zIndex = '9999';
-        canvas.style.borderRadius = '0';
-        canvas.style.border = 'none';
-        canvas.style.cursor = 'pointer';
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        document.querySelector('.canvas-wrap').style.overflow = 'visible';
-        markDirty();
-    }
-
-    function exitVizFullscreen() {
-        state.vizFullscreen = false;
-        canvas.style.position = '';
-        canvas.style.top = '';
-        canvas.style.left = '';
-        canvas.style.width = CANVAS_SIZE + 'px';
-        canvas.style.height = CANVAS_SIZE + 'px';
-        canvas.style.zIndex = '';
-        canvas.style.borderRadius = '12px';
-        canvas.style.border = '1px solid rgba(0, 212, 255, 0.15)';
-        canvas.style.cursor = '';
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = CANVAS_SIZE * dpr;
-        canvas.height = CANVAS_SIZE * dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        _updateCanvasRect();
-        markDirty();
-    }
-
-    function drawVisualizerFrame() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        const cx = w / 2;
-        const cy = h / 2;
-        const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
-
-        // Semi-transparent clear for trails
-        ctx.fillStyle = theme.background;
-        ctx.globalAlpha = 0.15;
-        ctx.fillRect(0, 0, w, h);
-        ctx.globalAlpha = 1.0;
-
-        switch (state.vizFsMode) {
-            case 0: drawFsRadialSpectrum(w, h, cx, cy, theme); break;
-            case 1: drawFsParticleNebula(w, h, cx, cy, theme); break;
-            case 2: drawFsWaveformTerrain(w, h, cx, cy, theme); break;
-            case 3: drawFsKaleidoscope(w, h, cx, cy, theme); break;
-            case 4: drawFsWaterfall(w, h, cx, cy, theme); break;
-            default: drawFsRadialSpectrum(w, h, cx, cy, theme); break;
-        }
-
-        // Overlays
-        drawFsOverlays(w, h);
-
-        // Always request redraw in fullscreen (continuous animation)
-        markDirty();
-    }
-
-    function drawFsRadialSpectrum(w, h, cx, cy, theme) {
-        const spectrum = state.vizSpectrum;
-        const minDim = Math.min(w, h);
-
-        // Slow rotation
-        _fsRotation += 0.001;
-
-        // Beat pulse
-        if (state.vizBeat) _fsBeatScale = 1.3;
-        _fsBeatScale += (1.0 - _fsBeatScale) * 0.08;
-
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(_fsRotation);
-
-        const bandColors = [
-            '#ff2233', '#ff6622', '#ffaa00', '#00ccff',
-            '#0088ff', '#8844ff', '#aa22ff', '#cc44ff'
-        ];
-
-        for (let i = 0; i < 8; i++) {
-            const amp = spectrum[i] || 0;
-            const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
-            const mirrorAngle = angle + Math.PI;
-
-            const baseR = minDim * 0.15;
-            const maxR = minDim * 0.3 * _fsBeatScale;
-            const arcR = baseR + amp * maxR;
-            const arcWidth = minDim * 0.04;
-
-            // Draw arc pair (symmetric)
-            for (const a of [angle, mirrorAngle]) {
-                ctx.beginPath();
-                ctx.arc(0, 0, arcR, a - 0.15, a + 0.15);
-                ctx.lineWidth = arcWidth * (0.5 + amp * 0.5);
-                ctx.strokeStyle = bandColors[i];
-                ctx.globalAlpha = 0.3 + amp * 0.7;
-                ctx.lineCap = 'round';
-                ctx.stroke();
-
-                // Inner glow arc
-                ctx.beginPath();
-                ctx.arc(0, 0, arcR * 0.7, a - 0.1, a + 0.1);
-                ctx.lineWidth = arcWidth * 0.3;
-                ctx.strokeStyle = theme.primary;
-                ctx.globalAlpha = amp * 0.4;
-                ctx.stroke();
-            }
-        }
-
-        // Center dot
-        ctx.beginPath();
-        ctx.arc(0, 0, 4 + state.vizPhase * 3, 0, Math.PI * 2);
-        ctx.fillStyle = theme.primary;
-        ctx.globalAlpha = 0.6;
-        ctx.fill();
-
-        ctx.globalAlpha = 1.0;
-        ctx.restore();
-    }
-
-    // Placeholder stubs for modes 2-5 (implemented in later tasks)
-    function drawFsParticleNebula(w, h, cx, cy, theme) {
-        const spectrum = state.vizSpectrum;
-        const particles = state.vizFsParticles;
-        const maxParticles = 800;
-        const bass = (spectrum[0] + spectrum[1]) / 2;
-        const treble = (spectrum[5] + spectrum[6] + spectrum[7]) / 3;
-        const energy = state.djEnergy || 0;
-
-        // Spawn particles continuously
-        const spawnRate = Math.floor(2 + energy * 6);
-        for (let s = 0; s < spawnRate && particles.length < maxParticles; s++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 20 + Math.random() * 60;
-            particles.push({
-                x: cx + Math.cos(angle) * dist,
-                y: cy + Math.sin(angle) * dist,
-                angle: angle,
-                angularVel: (0.005 + Math.random() * 0.015) * (Math.random() < 0.5 ? 1 : -1),
-                radius: dist,
-                radialVel: 0,
-                life: 1.0,
-                decay: 0.001 + Math.random() * 0.003,
-                size: 1 + Math.random() * 2,
-                hueShift: Math.random() * 60 - 30,
-            });
-        }
-
-        // Beat burst
-        if (state.vizBeat) {
-            const burstCount = Math.min(20, maxParticles - particles.length);
-            for (let b = 0; b < burstCount; b++) {
-                const angle = Math.random() * Math.PI * 2;
-                particles.push({
-                    x: cx + Math.cos(angle) * 10,
-                    y: cy + Math.sin(angle) * 10,
-                    angle: angle,
-                    angularVel: (0.01 + Math.random() * 0.03) * (Math.random() < 0.5 ? 1 : -1),
-                    radius: 10 + Math.random() * 30,
-                    radialVel: 2 + Math.random() * 4,
-                    life: 1.0,
-                    decay: 0.003 + Math.random() * 0.005,
-                    size: 2 + Math.random() * 3,
-                    hueShift: Math.random() * 60 - 30,
-                });
-            }
-        }
-
-        // Update and draw particles
-        const minDim = Math.min(w, h);
-        const maxDist = minDim * 0.45;
-
-        for (let i = particles.length - 1; i >= 0; i--) {
-            const p = particles[i];
-
-            // Orbital motion
-            p.angle += p.angularVel;
-
-            // Bass pushes outward, treble contracts
-            const radialForce = bass * 1.5 - treble * 0.8;
-            p.radialVel += radialForce * 0.3;
-            p.radialVel *= 0.95;  // damping
-            p.radius += p.radialVel;
-            p.radius = Math.max(5, p.radius);
-
-            p.x = cx + Math.cos(p.angle) * p.radius;
-            p.y = cy + Math.sin(p.angle) * p.radius;
-            p.life -= p.decay;
-
-            // Remove dead or out-of-bounds
-            if (p.life <= 0 || p.radius > maxDist) {
-                particles.splice(i, 1);
-                continue;
-            }
-
-            // Draw
-            const alpha = p.life * (0.3 + energy * 0.5);
-            const distFromCenter = p.radius / maxDist;
-            const drawSize = p.size * (1.5 - distFromCenter);
-
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, Math.max(0.5, drawSize), 0, Math.PI * 2);
-            ctx.fillStyle = theme.primary;
-            ctx.globalAlpha = Math.min(1, alpha);
-            ctx.fill();
-
-            // Occasional glow for larger particles
-            if (drawSize > 2) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, drawSize * 2.5, 0, Math.PI * 2);
-                ctx.fillStyle = theme.secondary;
-                ctx.globalAlpha = alpha * 0.15;
-                ctx.fill();
-            }
-        }
-
-        // Center glow
-        const glowR = 30 + bass * 40;
-        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-        grad.addColorStop(0, theme.primary);
-        grad.addColorStop(1, 'transparent');
-        ctx.beginPath();
-        ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
-        ctx.fillStyle = grad;
-        ctx.globalAlpha = 0.2 + energy * 0.3;
-        ctx.fill();
-
-        ctx.globalAlpha = 1.0;
-    }
-    function drawFsWaveformTerrain(w, h, cx, cy, theme) {
-        const spectrum = state.vizSpectrum;
-        const energy = state.djEnergy || 0;
-        const lines = state.vizTerrainLines;
-        const maxLines = 40;
-        const pointCount = 128;
-
-        // Generate new line from current spectrum/energy
-        const newLine = new Float32Array(pointCount);
-        for (let i = 0; i < pointCount; i++) {
-            const t = i / (pointCount - 1);
-            // Map position to spectrum bands for displacement
-            const bandIdx = Math.floor(t * 7.99);
-            const bandAmp = spectrum[bandIdx] || 0;
-            // Gaussian-like envelope: strongest in center
-            const envelope = Math.exp(-((t - 0.5) * (t - 0.5)) * 8);
-            // Base displacement from energy + spectrum
-            let displacement = (energy * 0.3 + bandAmp * 0.7) * envelope;
-            // Add some noise for organic feel
-            displacement += (Math.random() - 0.5) * 0.05 * energy;
-            // Beat peak injection
-            if (state.vizBeat) {
-                const beatEnv = Math.exp(-((t - 0.5) * (t - 0.5)) * 20);
-                displacement += beatEnv * 0.5;
-            }
-            newLine[i] = displacement;
-        }
-
-        // Push new line and trim history
-        lines.push(newLine);
-        while (lines.length > maxLines) lines.shift();
-
-        // Draw lines from back (oldest/top) to front (newest/bottom)
-        const lineSpacing = h / (maxLines + 2);
-        const margin = w * 0.1;
-        const drawWidth = w - margin * 2;
-
-        for (let li = 0; li < lines.length; li++) {
-            const line = lines[li];
-            const progress = li / (lines.length - 1 || 1);  // 0=oldest, 1=newest
-            const baseY = h * 0.15 + li * lineSpacing;
-
-            // Color: warm (newest/bottom) to cool (oldest/top)
-            const r = Math.floor(255 * progress);
-            const g = Math.floor(120 * (1 - progress) + 80 * progress);
-            const b = Math.floor(255 * (1 - progress));
-            const alpha = 0.3 + progress * 0.7;
-
-            ctx.beginPath();
-            for (let i = 0; i < pointCount; i++) {
-                const x = margin + (i / (pointCount - 1)) * drawWidth;
-                const displacement = line[i] * lineSpacing * 3;
-                const y = baseY - displacement;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            }
-
-            ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
-            ctx.globalAlpha = alpha;
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-
-            // Fill below the line (creates depth/occlusion effect)
-            ctx.lineTo(margin + drawWidth, baseY + lineSpacing);
-            ctx.lineTo(margin, baseY + lineSpacing);
-            ctx.closePath();
-            ctx.fillStyle = theme.background;
-            ctx.globalAlpha = alpha * 0.8;
-            ctx.fill();
-        }
-
-        ctx.globalAlpha = 1.0;
-    }
-    function drawFsKaleidoscope(w, h, cx, cy, theme) {
-        const spectrum = state.vizSpectrum;
-        const bass = (spectrum[0] + spectrum[1]) / 2;
-        const mids = (spectrum[2] + spectrum[3] + spectrum[4]) / 3;
-        const treble = (spectrum[5] + spectrum[6] + spectrum[7]) / 3;
-        const energy = state.djEnergy || 0;
-        const minDim = Math.min(w, h);
-        const folds = 6;
-
-        // Rotation speed driven by mids
-        state.vizKaleidoAngle += 0.002 + mids * 0.02;
-
-        // Beat shatter effect
-        if (state.vizBeat) state.vizKaleidoShatter = 1.0;
-        state.vizKaleidoShatter *= 0.92;
-
-        // Hue from treble (180-360 range mapped to HSL)
-        const hue = 180 + treble * 180;
-
-        ctx.save();
-        ctx.translate(cx, cy);
-
-        for (let fold = 0; fold < folds; fold++) {
-            ctx.save();
-            ctx.rotate((fold / folds) * Math.PI * 2 + state.vizKaleidoAngle);
-
-            // Mirror every other fold
-            if (fold % 2 === 1) ctx.scale(1, -1);
-
-            const shatterOffset = state.vizKaleidoShatter * 15;
-
-            // Nested polygon layers
-            for (let layer = 0; layer < 4; layer++) {
-                const layerBand = spectrum[layer * 2] || 0;
-                const baseSize = minDim * (0.08 + layer * 0.06);
-                const size = baseSize * (0.3 + bass * 0.7) * (1.0 - state.vizKaleidoShatter * 0.3);
-                const sides = 3 + layer;  // triangle, square, pentagon, hexagon
-                const layerDist = (layer + 1) * minDim * 0.06 + shatterOffset * (layer + 1);
-
-                ctx.save();
-                ctx.translate(layerDist, 0);
-                ctx.rotate(state.vizKaleidoAngle * (layer % 2 === 0 ? 1 : -1) * 0.5);
-
-                ctx.beginPath();
-                for (let s = 0; s <= sides; s++) {
-                    const a = (s / sides) * Math.PI * 2 - Math.PI / 2;
-                    const px = Math.cos(a) * size;
-                    const py = Math.sin(a) * size;
-                    if (s === 0) ctx.moveTo(px, py);
-                    else ctx.lineTo(px, py);
-                }
-                ctx.closePath();
-
-                const layerHue = (hue + layer * 40) % 360;
-                ctx.strokeStyle = `hsl(${layerHue}, 80%, ${50 + layerBand * 30}%)`;
-                ctx.globalAlpha = 0.4 + layerBand * 0.5;
-                ctx.lineWidth = 1.5 + bass * 2;
-                ctx.stroke();
-
-                // Fill with low alpha for depth
-                ctx.fillStyle = `hsl(${layerHue}, 60%, ${30 + layerBand * 20}%)`;
-                ctx.globalAlpha = 0.08 + layerBand * 0.12;
-                ctx.fill();
-
-                ctx.restore();
-            }
-
-            ctx.restore();
-        }
-
-        // Center mandala
-        const mandalR = 20 + bass * 30;
-        const mandalGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, mandalR);
-        mandalGrad.addColorStop(0, `hsl(${hue}, 80%, 70%)`);
-        mandalGrad.addColorStop(1, 'transparent');
-        ctx.beginPath();
-        ctx.arc(0, 0, mandalR, 0, Math.PI * 2);
-        ctx.fillStyle = mandalGrad;
-        ctx.globalAlpha = 0.5 + energy * 0.3;
-        ctx.fill();
-
-        ctx.globalAlpha = 1.0;
-        ctx.restore();
-    }
-    function drawFsWaterfall(w, h, cx, cy, theme) {
-        const spectrum = state.vizSpectrum;
-        const history = state.vizWaterfallHistory;
-        const maxColumns = Math.min(300, Math.floor(w));
-
-        // Push current spectrum as new column
-        const col = new Float32Array(8);
-        for (let i = 0; i < 8; i++) col[i] = spectrum[i] || 0;
-        history.push(col);
-        while (history.length > maxColumns) history.shift();
-
-        // Color map function: amplitude -> color
-        function ampToColor(amp) {
-            if (amp < 0.15) return `rgb(${Math.floor(10 + amp * 200)}, ${Math.floor(10 + amp * 100)}, ${Math.floor(40 + amp * 600)})`;
-            if (amp < 0.35) return `rgb(${Math.floor(amp * 200)}, ${Math.floor(80 + amp * 400)}, ${Math.floor(200 + amp * 150)})`;
-            if (amp < 0.6) return `rgb(${Math.floor(100 + amp * 255)}, ${Math.floor(200 + amp * 55)}, ${Math.floor(200 * (1 - amp))})`;
-            if (amp < 0.85) return `rgb(255, ${Math.floor(200 + amp * 55)}, ${Math.floor(100 * (1 - amp))})`;
-            return `rgb(255, ${Math.floor(150 + amp * 105)}, ${Math.floor(50 + amp * 80)})`;
-        }
-
-        const bandLabels = ['Sub', 'Bass', 'Low', 'Mid', 'UMid', 'Pres', 'Bril', 'Air'];
-        const labelWidth = 40;
-        const plotLeft = labelWidth;
-        const plotWidth = w - labelWidth;
-        const bandHeight = h / 8;
-        const colWidth = Math.max(1, plotWidth / maxColumns);
-
-        // Clear the plot area (no trail effect for waterfall)
-        ctx.fillStyle = theme.background;
-        ctx.globalAlpha = 1.0;
-        ctx.fillRect(0, 0, w, h);
-
-        // Draw spectrogram columns (newest on right)
-        for (let ci = 0; ci < history.length; ci++) {
-            const column = history[ci];
-            const x = plotLeft + (ci / maxColumns) * plotWidth;
-
-            for (let band = 0; band < 8; band++) {
-                const amp = column[band];
-                const y = (7 - band) * bandHeight;  // low freqs at bottom
-                ctx.fillStyle = ampToColor(amp);
-                ctx.globalAlpha = 0.8 + amp * 0.2;
-                ctx.fillRect(x, y, Math.ceil(colWidth) + 1, Math.ceil(bandHeight) + 1);
-            }
-        }
-
-        // Band labels on left edge
-        ctx.globalAlpha = 0.7;
-        ctx.font = 'bold 10px sans-serif';
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = theme.primary;
-        for (let band = 0; band < 8; band++) {
-            const y = (7 - band) * bandHeight + bandHeight / 2;
-            ctx.fillText(bandLabels[band], labelWidth - 4, y);
-        }
-
-        // Horizontal grid lines
-        ctx.strokeStyle = theme.primary;
-        ctx.globalAlpha = 0.1;
-        ctx.lineWidth = 0.5;
-        for (let band = 1; band < 8; band++) {
-            const y = band * bandHeight;
-            ctx.beginPath();
-            ctx.moveTo(plotLeft, y);
-            ctx.lineTo(w, y);
-            ctx.stroke();
-        }
-
-        // Current spectrum highlight (rightmost column glow)
-        if (history.length > 0) {
-            const lastX = plotLeft + ((history.length - 1) / maxColumns) * plotWidth;
-            ctx.strokeStyle = theme.primary;
-            ctx.globalAlpha = 0.4;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(lastX, 0);
-            ctx.lineTo(lastX, h);
-            ctx.stroke();
-        }
-
-        ctx.globalAlpha = 1.0;
-    }
-    function drawFsOverlays(w, h) {
-        const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
-
-        // Mode name overlay (fades after mode switch)
-        if (state.vizModeNameAlpha > 0.01) {
-            ctx.save();
-            ctx.font = 'bold 32px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = theme.primary;
-            ctx.globalAlpha = state.vizModeNameAlpha;
-            ctx.fillText(state.vizModeNameText || '', w / 2, h / 2);
-            ctx.restore();
-            state.vizModeNameAlpha -= 0.008;
-            if (state.vizModeNameAlpha < 0) state.vizModeNameAlpha = 0;
-        }
-
-        // Spotify now-playing overlay (bottom-left)
-        if (state.vizSpotifyOverlayAlpha > 0.01) {
-            const trackEl = document.getElementById('spotify-track');
-            const artistEl = document.getElementById('spotify-artist');
-            const trackText = trackEl ? trackEl.textContent : '';
-            const artistText = artistEl ? artistEl.textContent : '';
-
-            if (trackText) {
-                ctx.save();
-                const padding = 12;
-                const x = padding;
-                const y = h - padding;
-
-                // Semi-transparent background pill
-                ctx.font = 'bold 14px sans-serif';
-                const trackWidth = ctx.measureText(trackText).width;
-                ctx.font = '12px sans-serif';
-                const artistWidth = ctx.measureText(artistText).width;
-                const pillWidth = Math.max(trackWidth, artistWidth) + padding * 2;
-                const pillHeight = 44;
-
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-                ctx.globalAlpha = state.vizSpotifyOverlayAlpha;
-                const pillY = y - pillHeight;
-                ctx.beginPath();
-                // Rounded rect
-                const r = 8;
-                ctx.moveTo(x + r, pillY);
-                ctx.lineTo(x + pillWidth - r, pillY);
-                ctx.quadraticCurveTo(x + pillWidth, pillY, x + pillWidth, pillY + r);
-                ctx.lineTo(x + pillWidth, pillY + pillHeight - r);
-                ctx.quadraticCurveTo(x + pillWidth, pillY + pillHeight, x + pillWidth - r, pillY + pillHeight);
-                ctx.lineTo(x + r, pillY + pillHeight);
-                ctx.quadraticCurveTo(x, pillY + pillHeight, x, pillY + pillHeight - r);
-                ctx.lineTo(x, pillY + r);
-                ctx.quadraticCurveTo(x, pillY, x + r, pillY);
-                ctx.closePath();
-                ctx.fill();
-
-                // Track name
-                ctx.font = 'bold 14px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'top';
-                ctx.fillStyle = '#ffffff';
-                ctx.globalAlpha = state.vizSpotifyOverlayAlpha;
-                ctx.fillText(trackText, x + padding, pillY + 8);
-
-                // Artist
-                ctx.font = '12px sans-serif';
-                ctx.fillStyle = theme.primary;
-                ctx.fillText(artistText, x + padding, pillY + 26);
-
-                ctx.restore();
-            }
-
-            // Decay after 5 seconds (300 frames at 60fps)
-            if (!state._vizSpotifyShowTimer) state._vizSpotifyShowTimer = 0;
-            state._vizSpotifyShowTimer++;
-            if (state._vizSpotifyShowTimer > 300) {
-                state.vizSpotifyOverlayAlpha -= 0.02;
-                if (state.vizSpotifyOverlayAlpha < 0) state.vizSpotifyOverlayAlpha = 0;
-            }
-        }
-    }
 
     function drawMixerEffects() {
         const intensity = state.vizIntensity;
@@ -1856,7 +1214,7 @@
         ctx.fill();
 
         // Energy-reactive ring pulse
-        const energy = state.djEnergy || 0;
+        const energy = state.vizEnergy || 0;
         if (energy > 0.01) {
             const pulseRadius = RING_RADIUS + energy * 15;
             const pulseGlow = ctx.createRadialGradient(
@@ -2146,12 +1504,6 @@
         btnBounce.style.borderColor = state.autoBounce !== 'off' ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
         btnBounce.style.color = state.autoBounce !== 'off' ? '#1ed760' : '#00d4ff';
         bounceSettings.classList.toggle('active', state.autoBounce !== 'off');
-        if (state.autoBounce !== 'off' && state.autoDJ) {
-            state.autoDJ = false;
-            document.getElementById('btn-autodj').textContent = 'Auto-DJ: Off';
-            document.getElementById('btn-autodj').style.borderColor = 'rgba(0, 212, 255, 0.3)';
-            document.getElementById('btn-autodj').style.color = '#00d4ff';
-        }
     });
 
     bouncePatternBtn.addEventListener('click', () => {
@@ -2177,58 +1529,6 @@
         state.bounceBPM = Math.max(40, Math.min(300, parseInt(bounceBpmInput.value) || 120));
         bounceBpmInput.value = state.bounceBPM;
         localStorage.setItem('mixer-bounce-bpm', state.bounceBPM);
-    });
-
-    // ── Auto-DJ toggle ──────────────────────────────────────────────────
-    const btnAutoDJ = document.getElementById('btn-autodj');
-    btnAutoDJ.addEventListener('click', () => {
-        state.autoDJ = !state.autoDJ;
-        btnAutoDJ.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
-        btnAutoDJ.style.borderColor = state.autoDJ
-            ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
-        btnAutoDJ.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
-        // Disable auto-bounce when Auto-DJ is on (they'd conflict)
-        if (state.autoDJ && state.autoBounce !== 'off') {
-            state.autoBounce = 'off';
-            btnBounce.textContent = 'Bounce: Off';
-            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
-            btnBounce.style.color = '#00d4ff';
-            bounceSettings.classList.remove('active');
-        }
-    });
-
-    // ── Party Mode ──────────────────────────────────────────────────
-    const btnParty = document.getElementById('btn-party');
-    let partyMode = false;
-
-    btnParty.addEventListener('click', () => {
-        partyMode = !partyMode;
-        btnParty.style.borderColor = partyMode ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
-        btnParty.style.color = partyMode ? '#1ed760' : '#00d4ff';
-        btnParty.textContent = partyMode ? 'Party: On' : 'Party';
-
-        if (partyMode) {
-            // Enable Auto-DJ
-            state.autoDJ = true;
-            btnAutoDJ.textContent = 'Auto-DJ: On';
-            btnAutoDJ.style.borderColor = 'rgba(30, 215, 96, 0.6)';
-            btnAutoDJ.style.color = '#1ed760';
-            // Disable bounce (conflicts with Auto-DJ)
-            state.autoBounce = 'off';
-            btnBounce.textContent = 'Bounce: Off';
-            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
-            btnBounce.style.color = '#00d4ff';
-            bounceSettings.classList.remove('active');
-            // Set stereo separation to 80%
-            state.stereoSep = 0.8;
-            document.getElementById('stereo-sep').value = 80;
-            document.getElementById('stereo-sep-val').textContent = '80%';
-            socket.emit('set_stereo_separation', { value: 0.8 });
-            localStorage.setItem('mixer-stereo-sep', '0.8');
-            showToast('Party Mode activated');
-        } else {
-            showToast('Party Mode deactivated');
-        }
     });
 
     // ── Visualizer settings panel ────────────────────────────────────
@@ -2284,14 +1584,6 @@
         });
     }
 
-    // Fullscreen mode select
-    const vizFsSel = document.getElementById('viz-fsmode');
-    vizFsSel.value = state.vizFsMode;
-    vizFsSel.addEventListener('change', () => {
-        state.vizFsMode = parseInt(vizFsSel.value);
-        localStorage.setItem('mixer-viz-fsmode', state.vizFsMode);
-    });
-
     // Theme select
     const vizThemeSel = document.getElementById('viz-theme');
     vizThemeSel.value = state.vizThemeIdx;
@@ -2299,11 +1591,6 @@
         state.vizThemeIdx = parseInt(vizThemeSel.value);
         localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
         markDirty();
-    });
-
-    // Fullscreen button
-    document.getElementById('viz-fullscreen-btn').addEventListener('click', () => {
-        if (!state.vizFullscreen) enterVizFullscreen();
     });
 
     // ── Drag event handlers ────────────────────────────────────────────
@@ -2579,84 +1866,6 @@
         }
     });
 
-    // ── Preset System ──────────────────────────────────────────────────
-
-    function renderPresetSlots() {
-        const container = document.getElementById('preset-slots');
-        container.innerHTML = '';
-        for (let i = 0; i < 9; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'preset-slot' + (state.presets[i] ? ' filled' : '') + (state.activePreset === i ? ' active' : '');
-            slot.textContent = String(i + 1);
-            slot.addEventListener('click', () => loadPreset(i));
-            container.appendChild(slot);
-        }
-    }
-
-    function showToast(msg) {
-        const toast = document.getElementById('preset-toast');
-        toast.textContent = msg;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 1500);
-    }
-
-    function savePreset(index) {
-        state.presets[index] = {
-            controlPoint: { x: state.controlPoint.x, y: state.controlPoint.y },
-            curveType: state.curveType,
-            minVolumes: Object.assign({}, state.minVolumes),
-            autoDJ: state.autoDJ,
-            panPositions: Object.assign({}, state.panPositions),
-            stereoSep: state.stereoSep,
-        };
-        localStorage.setItem('mixer-presets', JSON.stringify(state.presets));
-        renderPresetSlots();
-        showToast('Preset ' + (index + 1) + ' saved');
-    }
-
-    function loadPreset(index) {
-        const preset = state.presets[index];
-        if (!preset) return;
-        state.activePreset = index;
-        state.presetAnimTarget = { x: preset.controlPoint.x, y: preset.controlPoint.y };
-        state.presetAnimating = true;
-        state.curveType = preset.curveType || 'inverse-square';
-        const curveSelect = document.getElementById("curve-select");
-        if (curveSelect) curveSelect.value = state.curveType;
-        localStorage.setItem('mixer-curve', state.curveType);
-        if (preset.minVolumes) {
-            state.minVolumes = Object.assign({}, preset.minVolumes);
-            localStorage.setItem('mixer-minvols', JSON.stringify(state.minVolumes));
-        }
-        // Restore Auto-DJ state
-        state.autoDJ = !!preset.autoDJ;
-        const adjBtn = document.getElementById('btn-autodj');
-        adjBtn.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
-        adjBtn.style.borderColor = state.autoDJ ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
-        adjBtn.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
-        // Restore 3D audio settings
-        if (preset.panPositions) {
-            state.panPositions = Object.assign({}, preset.panPositions);
-            localStorage.setItem('mixer-pans', JSON.stringify(state.panPositions));
-            for (const [did, pan] of Object.entries(state.panPositions)) {
-                socket.emit('set_pan', { device_id: did, pan });
-            }
-        }
-        if (preset.stereoSep !== undefined) {
-            state.stereoSep = preset.stereoSep;
-            localStorage.setItem('mixer-stereo-sep', String(state.stereoSep));
-            const ssSlider = document.getElementById('stereo-sep');
-            const ssVal = document.getElementById('stereo-sep-val');
-            ssSlider.value = Math.round(state.stereoSep * 100);
-            ssVal.textContent = ssSlider.value + '%';
-            socket.emit('set_stereo_separation', { value: state.stereoSep });
-        }
-        renderPresetSlots();
-        showToast('Preset ' + (index + 1) + ' loaded');
-    }
-
-    renderPresetSlots();
-
     // ── Keyboard & Accessibility ────────────────────────────────────────
 
     function announce(msg) {
@@ -2694,69 +1903,9 @@
                 e.preventDefault();
                 break;
             case 'Escape':
-                if (state.vizFullscreen) {
-                    exitVizFullscreen();
-                } else {
-                    closeEQPanel();
-                }
+                closeEQPanel();
                 e.preventDefault();
                 break;
-        }
-
-        // Number keys for presets (only when canvas is focused)
-        const num = parseInt(e.key);
-        if (num >= 1 && num <= 9 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-            if (e.shiftKey) {
-                savePreset(num - 1);
-            } else {
-                loadPreset(num - 1);
-            }
-            e.preventDefault();
-        }
-    });
-
-    // Global keyboard shortcuts for visualizer
-    document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
-
-        if (e.key === 'v' || e.key === 'V') {
-            if (state.vizFullscreen) exitVizFullscreen();
-            else enterVizFullscreen();
-            e.preventDefault();
-            return;
-        }
-
-        if (state.vizFullscreen) {
-            switch (e.key) {
-                case 'ArrowLeft':
-                    state.vizFsMode = (state.vizFsMode - 1 + VIZ_FS_MODES.length) % VIZ_FS_MODES.length;
-                    localStorage.setItem('mixer-viz-fsmode', state.vizFsMode);
-                    state.vizModeNameAlpha = 1.0;
-                    state.vizModeNameText = VIZ_FS_MODES[state.vizFsMode];
-                    markDirty();
-                    e.preventDefault();
-                    break;
-                case 'ArrowRight':
-                    state.vizFsMode = (state.vizFsMode + 1) % VIZ_FS_MODES.length;
-                    localStorage.setItem('mixer-viz-fsmode', state.vizFsMode);
-                    state.vizModeNameAlpha = 1.0;
-                    state.vizModeNameText = VIZ_FS_MODES[state.vizFsMode];
-                    markDirty();
-                    e.preventDefault();
-                    break;
-                case 'ArrowUp':
-                    state.vizThemeIdx = (state.vizThemeIdx - 1 + VIZ_THEMES.length) % VIZ_THEMES.length;
-                    localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
-                    markDirty();
-                    e.preventDefault();
-                    break;
-                case 'ArrowDown':
-                    state.vizThemeIdx = (state.vizThemeIdx + 1) % VIZ_THEMES.length;
-                    localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
-                    markDirty();
-                    e.preventDefault();
-                    break;
-            }
         }
     });
 
@@ -2929,23 +2078,6 @@
             }
         }
 
-        // Preset position animation
-        if (state.presetAnimating && state.presetAnimTarget) {
-            const dx = state.presetAnimTarget.x - state.controlPoint.x;
-            const dy = state.presetAnimTarget.y - state.controlPoint.y;
-            if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
-                state.controlPoint.x = state.presetAnimTarget.x;
-                state.controlPoint.y = state.presetAnimTarget.y;
-                state.presetAnimating = false;
-                state.presetAnimTarget = null;
-            } else {
-                state.controlPoint.x += dx * 0.15;
-                state.controlPoint.y += dy * 0.15;
-            }
-            updateVolumes();
-            animating = true;
-        }
-
         // Auto-bounce — customizable patterns
         if (state.autoBounce !== 'off' && !state.isDragging) {
             const n = state.devices.length;
@@ -3012,31 +2144,8 @@
             }
         }
 
-        // Auto-DJ — energy-reactive crossfading between speakers
-        if (state.autoDJ && !state.isDragging) {
-            const n = state.devices.length;
-            if (n >= 2) {
-                // Primary speaker position
-                const primaryPos = devicePosition(state.djPrimarySpeaker, n);
-                // Energy maps control point between primary speaker and center
-                // energy 0 → sit on primary speaker, energy 1 → center (balanced)
-                const energy = state.djEnergy;
-                const targetX = primaryPos.x + (CENTER - primaryPos.x) * energy;
-                const targetY = primaryPos.y + (CENTER - primaryPos.y) * energy;
-                // Smooth lerp (0.05 = ~1 second to settle)
-                state.controlPoint.x += (targetX - state.controlPoint.x) * 0.05;
-                state.controlPoint.y += (targetY - state.controlPoint.y) * 0.05;
-                updateVolumes();
-                animating = true;
-            }
-        }
-
-        if (state.vizFullscreen) {
-            drawVisualizerFrame();
-            _needsRedraw = false;
-            requestAnimationFrame(animationLoop);
-            return;
-        }
+        // Continuously animate when visualizer effects are active
+        if (state.vizMode >= 1 && state.vizIntensity > 0.01) animating = true;
 
         if (animating || _needsRedraw) {
             drawMixer();
