@@ -162,3 +162,4 @@ class FadeStore:
         """Remove all fades (thread-safe)."""
         with self._lock:
             self._fades.clear()
+            self._save()

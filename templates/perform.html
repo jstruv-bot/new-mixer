@@ -272,7 +272,7 @@
         &nbsp;&middot;&nbsp; <kbd>Esc</kbd> stop &nbsp;&middot;&nbsp; <kbd>Space</kbd> pause
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
     <script>
     (function() {
         'use strict';
@@ -369,10 +369,11 @@
             return _cachedPositions[key];
         }
 
-        // ── Volume weight computation (simplified) ───────────────────
+        // ── Volume weight computation (inverse-square, matches server) ──
         function computeWeight(dist) {
-            const epsilon = 100;
-            return 1.0 / (dist * dist + epsilon);
+            // Scale distance from 350px to 500px coordinate space, then use server formula
+            const scaledDist = dist / 0.7;
+            return 1.0 / (1 + (scaledDist * scaledDist) / 80000);
         }
 
         function computeDisplayVolumes() {
