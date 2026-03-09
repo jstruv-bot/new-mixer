@@ -60,6 +60,14 @@ def socketio_client(app):
     return server.socketio.test_client(app)
 
 
+@pytest.fixture(autouse=True)
+def _clear_fade_store():
+    """Clear fade store before each test to avoid cross-test pollution."""
+    server_module._fade_store._fades.clear()
+    yield
+    server_module._fade_store._fades.clear()
+
+
 # ---------------------------------------------------------------------------
 # Smoke test
 # ---------------------------------------------------------------------------
@@ -822,3 +830,69 @@ class TestVisualizerMode:
         time.sleep(0.05)
         assert server_module._viz_mode == 2  # max is 2
         server_module._viz_mode = 0
+
+
+# ---------------------------------------------------------------------------
+# TestFadeAPI
+# ---------------------------------------------------------------------------
+
+
+class TestFadeAPI:
+    """Tests for fade CRUD REST endpoints."""
+
+    def test_list_fades_empty(self, client):
+        resp = client.get('/api/fades')
+        assert resp.status_code == 200
+        assert resp.get_json() == {}
+
+    def test_save_and_get_fade(self, client):
+        fade = {
+            'name': 'Test',
+            'duration_ms': 5000,
+            'keyframes': [{'time_ms': 0, 'x': 250, 'y': 250}],
+        }
+        resp = client.post('/api/fades', json=fade)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['slot'] == 1
+
+        resp = client.get('/api/fades/1')
+        assert resp.status_code == 200
+        assert resp.get_json()['name'] == 'Test'
+
+    def test_update_fade(self, client):
+        fade = {'name': 'Original', 'duration_ms': 1000, 'keyframes': []}
+        client.post('/api/fades', json=fade)
+        resp = client.put('/api/fades/1', json={'name': 'Updated'})
+        assert resp.status_code == 200
+        assert client.get('/api/fades/1').get_json()['name'] == 'Updated'
+
+    def test_delete_fade(self, client):
+        fade = {'name': 'Delete Me', 'duration_ms': 1000, 'keyframes': []}
+        client.post('/api/fades', json=fade)
+        resp = client.delete('/api/fades/1')
+        assert resp.status_code == 200
+        resp = client.get('/api/fades/1')
+        assert resp.status_code == 404
+
+    def test_get_nonexistent_fade(self, client):
+        resp = client.get('/api/fades/99')
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TestFadeWebSocket
+# ---------------------------------------------------------------------------
+
+
+class TestFadeWebSocket:
+    """Tests for fade playback WebSocket events."""
+
+    def test_trigger_fade(self, socketio_client):
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        received = socketio_client.get_received()
+        assert socketio_client.is_connected()
+
+    def test_stop_fade(self, socketio_client):
+        socketio_client.emit('stop_fade', {})
+        assert socketio_client.is_connected()

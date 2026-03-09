@@ -26,6 +26,8 @@ from flask_socketio import SocketIO, emit
 import html
 import requests as http_requests  # avoid collision with flask.request
 
+from fade_engine import FadeStore, compute_volumes_from_position, interpolate_position
+
 # pycaw / COM imports for Windows Core Audio
 import comtypes
 from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
@@ -261,7 +263,6 @@ class AudioRouter:
         self._pan = {}                  # device_id -> float (-1.0 left .. +1.0 right)
         self._stereo_sep = 0.0          # global stereo separation (0=mono, 1=full split)
         self._spectrum_bands = [0.0] * 8  # 8 log-spaced frequency bands from FFT
-        self._spectrum_chunk_counter = 0  # compute FFT every 3rd chunk (~16Hz)
         self._beat_detected = False      # True on the frame a beat is detected
         self._beat_bpm = 0.0             # estimated BPM (median of recent intervals)
         self._beat_phase = 0.0           # 0-1 sawtooth synced to tempo
@@ -828,24 +829,18 @@ class AudioRouter:
                 # EMA smoothing (alpha=0.3 balances responsiveness vs stability)
                 self._energy_level = 0.3 * rms + 0.7 * self._energy_level
 
-                # FFT spectrum (every 3rd chunk ≈ 16Hz at 48kHz/1024)
-                self._spectrum_chunk_counter += 1
-                if self._spectrum_chunk_counter >= 3:
-                    self._spectrum_chunk_counter = 0
-                    self._spectrum_bands = self.compute_fft_bands(samples, self._sample_rate)
+                # FFT spectrum (every chunk for high-FPS visualizer)
+                self._spectrum_bands = self.compute_fft_bands(samples, self._sample_rate)
 
-                # Beat detection (runs alongside FFT)
-                if self._spectrum_chunk_counter == 0:  # same cadence as FFT
-                    self._beat_detected = self._check_beat(rms)
-                    # Update phase sawtooth
-                    if self._beat_bpm > 0:
-                        beat_period = 60.0 / self._beat_bpm
-                        elapsed = time.monotonic() - self._beat_last_time
-                        self._beat_phase = (elapsed / beat_period) % 1.0
-                    else:
-                        self._beat_phase = 0.0
+                # Beat detection (every chunk)
+                self._beat_detected = self._check_beat(rms)
+                # Update phase sawtooth
+                if self._beat_bpm > 0:
+                    beat_period = 60.0 / self._beat_bpm
+                    elapsed = time.monotonic() - self._beat_last_time
+                    self._beat_phase = (elapsed / beat_period) % 1.0
                 else:
-                    self._beat_detected = False
+                    self._beat_phase = 0.0
 
                 # Distribute to all output queues
                 for q in queues:
@@ -1122,6 +1117,23 @@ _cue_members = set()             # device_ids in cue (preview) mode
 _min_volumes = {}                # device_id -> float (0.0-1.0) minimum volume floor
 _max_volumes = {}                # device_id -> float (0.0-1.0) max volume cap
 _viz_mode = 0  # 0=energy only, 1=spectrum, 2=spectrum+beat
+
+# Fade system
+_FADES_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(sys.argv[0] if not getattr(sys, 'frozen', False)
+                                     else sys.executable)),
+    'fades.json')
+_fade_store = FadeStore(_FADES_FILE)
+_fade_playback_lock = threading.Lock()
+_fade_playback_state = {
+    'active': False,
+    'paused': False,
+    'fade_id': None,
+    'start_time': None,
+    'pause_time': None,
+    'elapsed_at_pause': 0,
+}
+_fade_playback_stop = threading.Event()
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -1883,6 +1895,170 @@ def api_set_zone_positions():
     return jsonify({'success': True})
 
 
+# ---------------------------------------------------------------------------
+# Fade CRUD REST endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/fades', methods=['GET'])
+def api_list_fades():
+    return jsonify(_fade_store.list_fades())
+
+@app.route('/api/fades', methods=['POST'])
+def api_save_fade():
+    data = request.get_json(silent=True) or {}
+    if 'name' not in data or 'keyframes' not in data:
+        return jsonify({'error': 'name and keyframes required'}), 400
+    slot = _fade_store.save_fade(data)
+    if slot is None:
+        return jsonify({'error': 'All 16 slots full'}), 400
+    return jsonify({'slot': slot, 'success': True})
+
+@app.route('/api/fades/<int:fade_id>', methods=['GET'])
+def api_get_fade(fade_id):
+    fade = _fade_store.get_fade(fade_id)
+    if fade is None:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(fade)
+
+@app.route('/api/fades/<int:fade_id>', methods=['PUT'])
+def api_update_fade(fade_id):
+    data = request.get_json(silent=True) or {}
+    if not _fade_store.update_fade(fade_id, data):
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'success': True})
+
+@app.route('/api/fades/<int:fade_id>', methods=['DELETE'])
+def api_delete_fade(fade_id):
+    if not _fade_store.delete_fade(fade_id):
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'success': True})
+
+
+# ---------------------------------------------------------------------------
+# Fade playback engine
+# ---------------------------------------------------------------------------
+
+
+def _get_device_positions():
+    """Get current device positions for volume computation."""
+    devices = get_bluetooth_speakers()
+    n = len(devices)
+    positions = []
+    for i, dev in enumerate(devices):
+        with _state_lock:
+            zp = _zone_positions.get(dev['id'])
+        if zp:
+            positions.append({'id': dev['id'], 'x': zp['x'], 'y': zp['y']})
+        else:
+            angle = (i * 2 * math.pi) / n - math.pi / 2
+            x = 250 + 180 * math.cos(angle)
+            y = 250 + 180 * math.sin(angle)
+            positions.append({'id': dev['id'], 'x': x, 'y': y})
+    return positions
+
+
+def _fade_playback_thread(fade_id, keyframes, duration_ms):
+    """Background thread: plays a fade by interpolating keyframes."""
+    with _fade_playback_lock:
+        _fade_playback_state['active'] = True
+        _fade_playback_state['paused'] = False
+        _fade_playback_state['fade_id'] = fade_id
+        _fade_playback_state['start_time'] = time.time()
+        _fade_playback_state['pause_time'] = None
+        _fade_playback_state['elapsed_at_pause'] = 0
+    _fade_playback_stop.clear()
+
+    device_positions = _get_device_positions()
+    curve_type = 'inverse-square'
+
+    while not _fade_playback_stop.is_set():
+        with _fade_playback_lock:
+            if _fade_playback_state['paused']:
+                time.sleep(0.033)
+                continue
+            elapsed = (time.time() - _fade_playback_state['start_time']) * 1000
+            elapsed -= _fade_playback_state.get('elapsed_at_pause', 0)
+
+        if elapsed >= duration_ms:
+            break
+
+        x, y = interpolate_position(keyframes, elapsed)
+
+        with _state_lock:
+            min_vols = dict(_min_volumes)
+        volumes = compute_volumes_from_position(x, y, device_positions, curve_type, min_vols)
+        for did, vol in volumes.items():
+            audio_router.set_volume(did, vol)
+            with _state_lock:
+                _last_known_volumes[did] = vol
+
+        progress = elapsed / duration_ms if duration_ms > 0 else 1.0
+        socketio.emit('fade_playback', {
+            'fade_id': fade_id,
+            'time_ms': round(elapsed),
+            'x': round(x, 1),
+            'y': round(y, 1),
+            'progress': round(progress, 3),
+            'state': 'playing',
+        })
+
+        _fade_playback_stop.wait(timeout=0.033)
+
+    with _fade_playback_lock:
+        _fade_playback_state['active'] = False
+        _fade_playback_state['fade_id'] = None
+    socketio.emit('fade_ended', {'fade_id': fade_id})
+
+
+@socketio.on('trigger_fade')
+def ws_trigger_fade(data):
+    fade_id = data.get('fade_id')
+    if not fade_id:
+        return
+    fade = _fade_store.get_fade(int(fade_id))
+    if not fade:
+        emit('fade_ended', {'fade_id': fade_id, 'error': 'not_found'})
+        return
+    _fade_playback_stop.set()
+    keyframes = fade.get('keyframes', [])
+    duration_ms = fade.get('duration_ms', 0)
+    if not keyframes or duration_ms <= 0:
+        emit('fade_ended', {'fade_id': fade_id, 'error': 'empty'})
+        return
+    threading.Thread(
+        target=_fade_playback_thread,
+        args=(int(fade_id), keyframes, duration_ms),
+        daemon=True,
+    ).start()
+
+
+@socketio.on('stop_fade')
+def ws_stop_fade(data=None):
+    _fade_playback_stop.set()
+    with _fade_playback_lock:
+        _fade_playback_state['active'] = False
+
+
+@socketio.on('pause_fade')
+def ws_pause_fade(data=None):
+    with _fade_playback_lock:
+        if _fade_playback_state['active']:
+            if _fade_playback_state['paused']:
+                pause_duration = time.time() - _fade_playback_state['pause_time']
+                _fade_playback_state['start_time'] += pause_duration
+                _fade_playback_state['paused'] = False
+            else:
+                _fade_playback_state['paused'] = True
+                _fade_playback_state['pause_time'] = time.time()
+
+
+@socketio.on('override_fade')
+def ws_override_fade(data=None):
+    _fade_playback_stop.set()
+    with _fade_playback_lock:
+        _fade_playback_state['active'] = False
+
 
 def _spotify_poller():
     """Background thread: polls Spotify every 3s, emits via WebSocket."""
@@ -1923,7 +2099,7 @@ def _spotify_poller():
 def _energy_emitter():
     """Background thread: emits audio energy and spectrum data."""
     while not _shutdown_event.is_set():
-        _shutdown_event.wait(timeout=0.1)  # ~10Hz
+        _shutdown_event.wait(timeout=0.033)  # ~30Hz
         if _shutdown_event.is_set():
             break
         if audio_router.is_running:
