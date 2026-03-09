@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Perform — Bluetooth Crossfade Mixer</title>
+    <style>
+        /* ── Reset & Base ─────────────────────────────────────── */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #0a0a14;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                         Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            padding-bottom: 2rem;
+        }
+
+        /* ── Top bar ─────────────────────────────────────────── */
+        .top-bar {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .back-link {
+            font-size: 0.75rem;
+            color: #555570;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .back-link:hover { color: #00d4ff; }
+        .connection-status {
+            font-size: 0.75rem;
+            color: #555570;
+        }
+        .connection-status.connected { color: #00ff88; }
+
+        /* ── Mixer canvas ────────────────────────────────────── */
+        .canvas-wrap {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            margin-top: 0.25rem;
+        }
+        #mixer-canvas {
+            border-radius: 10px;
+            border: 1px solid rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.05);
+            background: #0f0f23;
+            touch-action: none;
+        }
+
+        /* ── Trigger grid ────────────────────────────────────── */
+        .trigger-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            padding: 12px;
+            margin-top: 0.75rem;
+            width: 100%;
+            max-width: 540px;
+        }
+
+        .trigger-btn {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            max-width: 120px;
+            justify-self: center;
+            border-radius: 12px;
+            border: 2px solid rgba(0, 212, 255, 0.2);
+            background: rgba(0, 212, 255, 0.04);
+            color: #8888aa;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            font-family: inherit;
+            transition: border-color 0.2s, background 0.15s;
+            overflow: hidden;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .trigger-btn:active {
+            transform: scale(0.96);
+        }
+        .trigger-btn.empty {
+            opacity: 0.3;
+            cursor: default;
+            border-color: rgba(100, 100, 120, 0.2);
+            background: rgba(100, 100, 120, 0.04);
+        }
+        .trigger-btn.filled {
+            border-color: rgba(0, 212, 255, 0.35);
+            background: rgba(0, 212, 255, 0.06);
+        }
+        .trigger-btn.filled:hover {
+            border-color: rgba(0, 212, 255, 0.6);
+            background: rgba(0, 212, 255, 0.12);
+        }
+        .trigger-btn.active {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.15);
+            animation: activePulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes activePulse {
+            0%, 100% { box-shadow: 0 0 8px rgba(0, 212, 255, 0.2); }
+            50%      { box-shadow: 0 0 20px rgba(0, 212, 255, 0.5); }
+        }
+
+        .trigger-slot {
+            font-size: 0.65rem;
+            color: #555570;
+            font-weight: 600;
+        }
+        .trigger-name {
+            font-size: 0.8rem;
+            color: #c0c0d8;
+            font-weight: 600;
+            max-width: 90%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: center;
+        }
+        .trigger-duration {
+            font-size: 0.65rem;
+            color: #6666aa;
+        }
+
+        /* Progress ring SVG overlay */
+        .trigger-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .trigger-progress circle {
+            fill: none;
+            stroke: #00d4ff;
+            stroke-width: 3;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 0.05s linear;
+        }
+
+        /* ── Spotify widget (compact) ────────────────────────── */
+        .spotify-mini {
+            margin-top: 1rem;
+            display: none;
+            align-items: center;
+            gap: 0.8rem;
+            background: rgba(30, 215, 96, 0.06);
+            border: 1px solid rgba(30, 215, 96, 0.2);
+            border-radius: 10px;
+            padding: 0.6rem 1rem;
+            max-width: 540px;
+            width: calc(100% - 24px);
+        }
+        .spotify-mini.visible { display: flex; }
+        .spotify-mini-art {
+            width: 44px;
+            height: 44px;
+            border-radius: 6px;
+            object-fit: cover;
+        }
+        .spotify-mini-info { flex: 1; min-width: 0; }
+        .spotify-mini-track {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #f0f0f0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .spotify-mini-artist {
+            font-size: 0.75rem;
+            color: #9999bb;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ── Override progress ring on control point ────────── */
+        .override-ring {
+            position: absolute;
+            pointer-events: none;
+            display: none;
+        }
+
+        /* ── Keyboard hints ──────────────────────────────────── */
+        .key-hints {
+            margin-top: 0.75rem;
+            font-size: 0.65rem;
+            color: #444466;
+            text-align: center;
+            max-width: 540px;
+            line-height: 1.6;
+        }
+        .key-hints kbd {
+            display: inline-block;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 3px;
+            padding: 0 4px;
+            font-family: inherit;
+            font-size: 0.6rem;
+            color: #6666aa;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top bar -->
+    <div class="top-bar">
+        <a href="/" class="back-link">&#8592; Back to Studio</a>
+        <span id="conn-status" class="connection-status">Connecting...</span>
+    </div>
+
+    <!-- Mixer canvas (350px, read-only) -->
+    <div class="canvas-wrap">
+        <canvas id="mixer-canvas" width="350" height="350"></canvas>
+        <!-- Override progress SVG overlay -->
+        <svg id="override-svg" class="override-ring" width="50" height="50" viewBox="0 0 50 50">
+            <circle id="override-circle" cx="25" cy="25" r="20"
+                    stroke-dasharray="125.66" stroke-dashoffset="125.66"
+                    fill="none" stroke="#00d4ff" stroke-width="3"
+                    stroke-linecap="round"
+                    style="transform: rotate(-90deg); transform-origin: 50% 50%;" />
+        </svg>
+    </div>
+
+    <!-- Trigger grid (4x4) -->
+    <div class="trigger-grid" id="trigger-grid">
+        <!-- Populated by JS -->
+    </div>
+
+    <!-- Spotify mini widget -->
+    <div class="spotify-mini" id="spotify-mini">
+        <img class="spotify-mini-art" id="sp-art" src="" alt="">
+        <div class="spotify-mini-info">
+            <div class="spotify-mini-track" id="sp-track">--</div>
+            <div class="spotify-mini-artist" id="sp-artist">--</div>
+        </div>
+    </div>
+
+    <!-- Keyboard hints -->
+    <div class="key-hints">
+        <kbd>1</kbd>-<kbd>0</kbd> <kbd>-</kbd> <kbd>=</kbd> <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> trigger slots
+        &nbsp;&middot;&nbsp; <kbd>Esc</kbd> stop &nbsp;&middot;&nbsp; <kbd>Space</kbd> pause
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        // ── Canvas constants (350px version) ─────────────────────────
+        const CANVAS_SIZE   = 350;
+        const CENTER        = CANVAS_SIZE / 2;          // 175
+        const RING_RADIUS   = 126;                      // 350/500 * 180
+        const DEVICE_RADIUS = 20;                       // slightly smaller than studio's 28
+        const CONTROL_RADIUS = 10;                      // smaller control point
+        const ACCENT_COLOR  = '#00d4ff';
+        const ACCENT_DIM    = 'rgba(0, 212, 255, 0.25)';
+        const BG_COLOR      = '#0f0f23';
+        const SCALE         = 0.7;                      // 350/500
+
+        // ── DOM refs ─────────────────────────────────────────────────
+        const canvas       = document.getElementById('mixer-canvas');
+        const ctx          = canvas.getContext('2d');
+        const gridEl       = document.getElementById('trigger-grid');
+        const connStatus   = document.getElementById('conn-status');
+        const overrideSvg  = document.getElementById('override-svg');
+        const overrideCirc = document.getElementById('override-circle');
+        const spMini       = document.getElementById('spotify-mini');
+        const spArt        = document.getElementById('sp-art');
+        const spTrack      = document.getElementById('sp-track');
+        const spArtist     = document.getElementById('sp-artist');
+
+        // ── State ────────────────────────────────────────────────────
+        const state = {
+            devices:        [],
+            controlPoint:   { x: CENTER, y: CENTER },
+            displayVolumes: {},
+            audioLevels:    {},
+            displayLevels:  {},
+            vizEnergy:      0,
+            vizSpectrum:    new Float32Array(8),
+            vizBeat:        false,
+            vizBPM:         0,
+            vizMode:        0,
+            vizIntensity:   0.6,
+            vizWaveformAngle: 0,
+            vizBeatFlashAlpha: 0,
+        };
+
+        // Fade slots: { [slot]: { name, duration_ms, fade_id } }
+        let fadeSlots = {};
+        // Active fade tracking
+        let activeFadeId = null;
+        let activeFadeSlot = null;
+        let activeFadeProgress = 0;
+
+        // Override hold state
+        let overrideTimer = null;
+        let overrideStartTime = null;
+        let overrideActive = false;
+        let overrideDragging = false;
+
+        // Dirty flag for render loop
+        let needsRedraw = true;
+
+        function markDirty() { needsRedraw = true; }
+
+        // ── Ring glow (cached gradient) ──────────────────────────────
+        const _ringGlow = (() => {
+            const g = ctx.createRadialGradient(CENTER, CENTER, RING_RADIUS - 28, CENTER, CENTER, RING_RADIUS + 7);
+            g.addColorStop(0, 'rgba(0, 212, 255, 0.0)');
+            g.addColorStop(1, 'rgba(0, 212, 255, 0.04)');
+            return g;
+        })();
+
+        // ── Device position calculation ──────────────────────────────
+        const _cachedPositions = {};
+        function devicePosition(i, n) {
+            const key = n + '_' + i;
+            if (!_cachedPositions[key]) {
+                const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+                _cachedPositions[key] = {
+                    x: CENTER + RING_RADIUS * Math.cos(angle),
+                    y: CENTER + RING_RADIUS * Math.sin(angle)
+                };
+            }
+            return _cachedPositions[key];
+        }
+
+        // ── Volume weight computation (simplified) ───────────────────
+        function computeWeight(dist) {
+            const epsilon = 100;
+            return 1.0 / (dist * dist + epsilon);
+        }
+
+        function computeDisplayVolumes() {
+            const n = state.devices.length;
+            if (n === 0) return;
+            let weights = new Array(n);
+            let maxWeight = 0;
+            for (let i = 0; i < n; i++) {
+                const pos = devicePosition(i, n);
+                const dx = state.controlPoint.x - pos.x;
+                const dy = state.controlPoint.y - pos.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const w = computeWeight(dist);
+                weights[i] = w;
+                if (w > maxWeight) maxWeight = w;
+            }
+            for (let i = 0; i < n; i++) {
+                const id = state.devices[i].id;
+                const vol = maxWeight > 0 ? weights[i] / maxWeight : 0;
+                const prev = state.displayVolumes[id] || 0;
+                // Smooth interpolation
+                state.displayVolumes[id] = prev + (vol - prev) * 0.3;
+            }
+        }
+
+        // ── Visualizer: Spectrum ring ────────────────────────────────
+        function drawSpectrumRing() {
+            const spectrum = state.vizSpectrum;
+            const intensity = state.vizIntensity;
+            const hasSpectrum = state.vizMode >= 1;
+
+            const barCount = 48;
+            const bars = new Float32Array(barCount);
+            if (hasSpectrum) {
+                for (let i = 0; i < barCount; i++) {
+                    const bandFloat = (i / barCount) * 7;
+                    const lo = Math.floor(bandFloat);
+                    const hi = Math.min(lo + 1, 7);
+                    const frac = bandFloat - lo;
+                    bars[i] = spectrum[lo] * (1 - frac) + spectrum[hi] * frac;
+                }
+            } else {
+                const e = state.vizEnergy || 0;
+                bars.fill(e);
+            }
+
+            ctx.save();
+            ctx.translate(CENTER, CENTER);
+            const maxBarLen = 28 * intensity;
+
+            for (let i = 0; i < barCount; i++) {
+                const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+                const amp = bars[i];
+                const barLen = amp * maxBarLen;
+                if (barLen < 0.5) continue;
+
+                const innerR = RING_RADIUS - barLen - 3;
+                const outerR = RING_RADIUS - 3;
+                const x1 = Math.cos(angle) * innerR;
+                const y1 = Math.sin(angle) * innerR;
+                const x2 = Math.cos(angle) * outerR;
+                const y2 = Math.sin(angle) * outerR;
+
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = ACCENT_COLOR;
+                ctx.globalAlpha = amp * 0.5 * intensity;
+                ctx.lineWidth = Math.max(1, (Math.PI * 2 * RING_RADIUS / barCount) * 0.6);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1.0;
+            ctx.restore();
+        }
+
+        // ── Visualizer: Waveform orbit ───────────────────────────────
+        function drawWaveformOrbit() {
+            const intensity = state.vizIntensity;
+            const hasSpectrum = state.vizMode >= 1;
+            const baseRadius = RING_RADIUS * 0.45;
+            const points = 96;
+
+            state.vizWaveformAngle += 0.003;
+
+            ctx.save();
+            ctx.translate(CENTER, CENTER);
+            ctx.beginPath();
+
+            for (let i = 0; i <= points; i++) {
+                const t = i / points;
+                const angle = t * Math.PI * 2 + state.vizWaveformAngle;
+                let amp = 0;
+                if (hasSpectrum) {
+                    const bandIdx = Math.floor(t * 7.99);
+                    amp = state.vizSpectrum[bandIdx] || 0;
+                } else {
+                    amp = state.vizEnergy || 0;
+                }
+                const r = baseRadius + amp * 25 * intensity;
+                const px = Math.cos(angle) * r;
+                const py = Math.sin(angle) * r;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = 'rgba(0, 212, 255, ' + (0.15 * intensity) + ')';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // ── Beat flash ───────────────────────────────────────────────
+        function drawBeatFlash() {
+            if (state.vizBeatFlashAlpha <= 0.01) return;
+            const intensity = state.vizIntensity;
+            const flashRadius = RING_RADIUS * 0.8;
+
+            ctx.save();
+            const grad = ctx.createRadialGradient(CENTER, CENTER, 0, CENTER, CENTER, flashRadius);
+            grad.addColorStop(0, 'rgba(255, 255, 255, ' + (state.vizBeatFlashAlpha * 0.3) + ')');
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.beginPath();
+            ctx.arc(CENTER, CENTER, flashRadius, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.restore();
+
+            state.vizBeatFlashAlpha *= 0.88;
+        }
+
+        // ── Main draw function ───────────────────────────────────────
+        function drawMixer() {
+            ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            ctx.fillStyle = BG_COLOR;
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+            // Ring
+            ctx.beginPath();
+            ctx.arc(CENTER, CENTER, RING_RADIUS, 0, Math.PI * 2);
+            ctx.strokeStyle = ACCENT_DIM;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Ring glow
+            ctx.beginPath();
+            ctx.arc(CENTER, CENTER, RING_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = _ringGlow;
+            ctx.fill();
+
+            // Energy-reactive ring pulse
+            const energy = state.vizEnergy || 0;
+            if (energy > 0.01) {
+                const pulseRadius = RING_RADIUS + energy * 10;
+                const pulseGlow = ctx.createRadialGradient(
+                    CENTER, CENTER, RING_RADIUS - 7,
+                    CENTER, CENTER, pulseRadius
+                );
+                const alpha = energy * 0.15;
+                pulseGlow.addColorStop(0, 'rgba(30, 215, 96, 0)');
+                pulseGlow.addColorStop(0.5, 'rgba(30, 215, 96, ' + alpha + ')');
+                pulseGlow.addColorStop(1, 'rgba(30, 215, 96, 0)');
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, pulseRadius, 0, Math.PI * 2);
+                ctx.fillStyle = pulseGlow;
+                ctx.fill();
+            }
+
+            // Visualizer effects
+            if (state.vizIntensity > 0.01) {
+                drawSpectrumRing();
+                drawWaveformOrbit();
+                if (state.vizMode >= 2) drawBeatFlash();
+            }
+
+            const n = state.devices.length;
+
+            if (n === 0) {
+                ctx.fillStyle = '#555570';
+                ctx.font = '13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('No speakers detected', CENTER, CENTER);
+                return;
+            }
+
+            // Compute display volumes
+            computeDisplayVolumes();
+
+            // Draw devices
+            for (let i = 0; i < n; i++) {
+                const pos = devicePosition(i, n);
+                const device = state.devices[i];
+                const id = device.id;
+                const dv = state.displayVolumes[id] || 0;
+                const unavailable = (device.status && device.status !== 'connected' && device.status !== 'active');
+
+                // Connection line
+                const lineAlpha = unavailable ? 0.08 : (0.05 + dv * 0.3);
+                ctx.beginPath();
+                ctx.moveTo(state.controlPoint.x, state.controlPoint.y);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.strokeStyle = unavailable
+                    ? 'rgba(100, 100, 120, 0.15)'
+                    : 'rgba(0, 212, 255, ' + lineAlpha.toFixed(3) + ')';
+                ctx.lineWidth = unavailable ? 1 : (1 + dv * 1.2);
+                ctx.stroke();
+
+                if (unavailable) {
+                    // Grey device
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, DEVICE_RADIUS, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(100, 100, 120, 0.12)';
+                    ctx.strokeStyle = '#555570';
+                    ctx.lineWidth = 1.5;
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = '#555570';
+                    ctx.font = 'bold 9px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('N/A', pos.x, pos.y);
+                } else {
+                    // Glow
+                    const glowIntensity = 0.03 + dv * 0.25;
+                    const glowRadius = DEVICE_RADIUS * (1.0 + 0.5 * dv);
+                    const glow = ctx.createRadialGradient(
+                        pos.x, pos.y, DEVICE_RADIUS * 0.3,
+                        pos.x, pos.y, glowRadius
+                    );
+                    glow.addColorStop(0, 'rgba(0, 212, 255, ' + glowIntensity.toFixed(3) + ')');
+                    glow.addColorStop(1, 'rgba(0, 212, 255, 0.0)');
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = glow;
+                    ctx.fill();
+
+                    // Device circle
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, DEVICE_RADIUS, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(0, 212, 255, ' + (0.08 + dv * 0.12).toFixed(3) + ')';
+                    ctx.strokeStyle = ACCENT_COLOR;
+                    ctx.lineWidth = 1.5;
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Volume arc
+                    if (dv > 0.005) {
+                        const startAngle = -Math.PI / 2;
+                        const endAngle = startAngle + dv * 2 * Math.PI;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, DEVICE_RADIUS - 3, startAngle, endAngle);
+                        ctx.strokeStyle = ACCENT_COLOR;
+                        ctx.lineWidth = 2;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+                        ctx.lineCap = 'butt';
+                    }
+
+                    // Audio level meter ring
+                    const level = state.displayLevels[id] || 0;
+                    if (level > 0.005) {
+                        const meterStart = -Math.PI / 2;
+                        const meterEnd = meterStart + level * 2 * Math.PI;
+                        let meterColor;
+                        if (level < 0.5) {
+                            meterColor = 'rgba(0, ' + Math.round(200 + level * 110) + ', ' + Math.round(100 - level * 200) + ', 0.8)';
+                        } else {
+                            meterColor = 'rgba(' + Math.round((level - 0.5) * 510) + ', ' + Math.round(255 - (level - 0.5) * 300) + ', 0, 0.8)';
+                        }
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, DEVICE_RADIUS + 4, meterStart, meterEnd);
+                        ctx.strokeStyle = meterColor;
+                        ctx.lineWidth = 1.5;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+                        ctx.lineCap = 'butt';
+                    }
+
+                    // Volume text
+                    const pct = Math.round(dv * 100);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 9px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(pct + '%', pos.x, pos.y);
+                }
+
+                // Name label
+                ctx.fillStyle = unavailable ? '#555570' : '#a0a0c0';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                let label = device.name;
+                if (label.length > 14) label = label.substring(0, 12) + '\u2026';
+                ctx.fillText(label, pos.x, pos.y + DEVICE_RADIUS + 4);
+            }
+
+            // Control point
+            drawControlPoint();
+        }
+
+        function drawControlPoint() {
+            const cp = state.controlPoint;
+
+            // Outer glow
+            const glow = ctx.createRadialGradient(cp.x, cp.y, 0, cp.x, cp.y, CONTROL_RADIUS * 2.5);
+            glow.addColorStop(0, 'rgba(0, 212, 255, 0.25)');
+            glow.addColorStop(1, 'rgba(0, 212, 255, 0.0)');
+            ctx.beginPath();
+            ctx.arc(cp.x, cp.y, CONTROL_RADIUS * 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = glow;
+            ctx.fill();
+
+            // Solid circle
+            ctx.beginPath();
+            ctx.arc(cp.x, cp.y, CONTROL_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = overrideDragging ? '#ff6b6b' : ACCENT_COLOR;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.fill();
+            ctx.stroke();
+
+            // Inner dot
+            ctx.beginPath();
+            ctx.arc(cp.x, cp.y, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+        }
+
+        // ── Render loop ──────────────────────────────────────────────
+        let _rafId = null;
+        function renderLoop() {
+            _rafId = requestAnimationFrame(renderLoop);
+
+            // Smooth audio levels
+            for (const id in state.audioLevels) {
+                const peak = state.audioLevels[id] || 0;
+                const current = state.displayLevels[id] || 0;
+                state.displayLevels[id] = peak > current ? peak : current * 0.85;
+            }
+
+            // Beat flash decay
+            if (state.vizBeat) {
+                state.vizBeatFlashAlpha = 0.7;
+                state.vizBeat = false;
+            }
+
+            if (needsRedraw || state.vizEnergy > 0.01 || activeFadeId !== null) {
+                drawMixer();
+                needsRedraw = false;
+            }
+        }
+        renderLoop();
+
+        // ── Trigger grid rendering ───────────────────────────────────
+        function buildGrid() {
+            gridEl.innerHTML = '';
+            for (let slot = 1; slot <= 16; slot++) {
+                const btn = document.createElement('button');
+                btn.className = 'trigger-btn';
+                btn.dataset.slot = slot;
+
+                const fade = fadeSlots[slot];
+                if (fade) {
+                    btn.classList.add('filled');
+                    const durSec = (fade.duration_ms / 1000).toFixed(1);
+                    btn.innerHTML =
+                        '<span class="trigger-slot">' + slot + '</span>' +
+                        '<span class="trigger-name">' + escapeHtml(fade.name) + '</span>' +
+                        '<span class="trigger-duration">' + durSec + 's</span>' +
+                        '<svg class="trigger-progress" viewBox="0 0 100 100">' +
+                        '  <circle cx="50" cy="50" r="46" stroke-dasharray="289.03" stroke-dashoffset="289.03" />' +
+                        '</svg>';
+                } else {
+                    btn.classList.add('empty');
+                    btn.innerHTML = '<span class="trigger-slot">' + slot + '</span>';
+                }
+
+                btn.addEventListener('click', () => triggerFade(slot));
+                // Touch-friendly: prevent double-tap zoom
+                btn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    triggerFade(slot);
+                });
+
+                gridEl.appendChild(btn);
+            }
+            updateActiveButton();
+        }
+
+        function escapeHtml(text) {
+            const el = document.createElement('span');
+            el.textContent = text;
+            return el.innerHTML;
+        }
+
+        function updateActiveButton() {
+            const buttons = gridEl.querySelectorAll('.trigger-btn');
+            buttons.forEach(btn => {
+                const slot = parseInt(btn.dataset.slot);
+                if (slot === activeFadeSlot && activeFadeId !== null) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        function updateProgressRing(slot, progress) {
+            const btn = gridEl.querySelector('.trigger-btn[data-slot="' + slot + '"]');
+            if (!btn) return;
+            const circle = btn.querySelector('.trigger-progress circle');
+            if (!circle) return;
+            const circumference = 289.03; // 2 * PI * 46
+            circle.setAttribute('stroke-dashoffset', (circumference * (1 - progress)).toFixed(1));
+        }
+
+        function resetProgressRing(slot) {
+            const btn = gridEl.querySelector('.trigger-btn[data-slot="' + slot + '"]');
+            if (!btn) return;
+            const circle = btn.querySelector('.trigger-progress circle');
+            if (circle) circle.setAttribute('stroke-dashoffset', '289.03');
+        }
+
+        // ── Trigger logic ────────────────────────────────────────────
+        function triggerFade(slot) {
+            const fade = fadeSlots[slot];
+            if (!fade) return;
+
+            if (activeFadeSlot === slot && activeFadeId !== null) {
+                // Tap active slot -> stop
+                socket.emit('stop_fade');
+                return;
+            }
+
+            // Trigger new fade
+            socket.emit('trigger_fade', { fade_id: fade.fade_id });
+        }
+
+        // ── Override hold mechanism ──────────────────────────────────
+        const OVERRIDE_HOLD_MS = 1500;
+        const CIRCUMFERENCE = 125.66; // 2 * PI * 20
+
+        function startOverrideHold(clientX, clientY) {
+            if (overrideActive) return;
+            overrideStartTime = performance.now();
+
+            // Position SVG over the control point on canvas
+            const rect = canvas.getBoundingClientRect();
+            const cpScreenX = rect.left + state.controlPoint.x * (rect.width / CANVAS_SIZE);
+            const cpScreenY = rect.top + state.controlPoint.y * (rect.height / CANVAS_SIZE);
+            overrideSvg.style.left = (cpScreenX - 25) + 'px';
+            overrideSvg.style.top = (cpScreenY - 25) + 'px';
+            overrideSvg.style.display = 'block';
+            overrideSvg.style.position = 'fixed';
+            overrideCirc.setAttribute('stroke-dashoffset', CIRCUMFERENCE);
+
+            overrideTimer = requestAnimationFrame(function tickOverride() {
+                const elapsed = performance.now() - overrideStartTime;
+                const progress = Math.min(elapsed / OVERRIDE_HOLD_MS, 1);
+                overrideCirc.setAttribute('stroke-dashoffset', (CIRCUMFERENCE * (1 - progress)).toFixed(1));
+
+                if (progress >= 1) {
+                    // Override activated
+                    overrideActive = true;
+                    overrideDragging = true;
+                    overrideSvg.style.display = 'none';
+                    socket.emit('override_fade');
+                    markDirty();
+                    return;
+                }
+                overrideTimer = requestAnimationFrame(tickOverride);
+            });
+        }
+
+        function cancelOverrideHold() {
+            if (overrideTimer) {
+                cancelAnimationFrame(overrideTimer);
+                overrideTimer = null;
+            }
+            overrideStartTime = null;
+            overrideSvg.style.display = 'none';
+
+            if (overrideDragging) {
+                overrideDragging = false;
+                overrideActive = false;
+                markDirty();
+            }
+        }
+
+        function clampToRing(x, y) {
+            const dx = x - CENTER;
+            const dy = y - CENTER;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const maxR = RING_RADIUS - CONTROL_RADIUS;
+            if (dist > maxR) {
+                const scale = maxR / dist;
+                return { x: CENTER + dx * scale, y: CENTER + dy * scale };
+            }
+            return { x: x, y: y };
+        }
+
+        // Canvas pointer events for override
+        function getCanvasPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches ? e.touches[0] : e;
+            return {
+                x: (touch.clientX - rect.left) * (CANVAS_SIZE / rect.width),
+                y: (touch.clientY - rect.top) * (CANVAS_SIZE / rect.height)
+            };
+        }
+
+        function isOnControlPoint(p) {
+            const dx = p.x - state.controlPoint.x;
+            const dy = p.y - state.controlPoint.y;
+            return (dx * dx + dy * dy) < 400; // 20^2
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const p = getCanvasPos(e);
+            if (isOnControlPoint(p)) {
+                startOverrideHold(e.clientX, e.clientY);
+                e.preventDefault();
+            }
+        });
+        canvas.addEventListener('touchstart', (e) => {
+            const p = getCanvasPos(e);
+            if (isOnControlPoint(p)) {
+                startOverrideHold(e.touches[0].clientX, e.touches[0].clientY);
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        function handleDragMove(e) {
+            if (!overrideDragging) return;
+            const p = getCanvasPos(e);
+            const clamped = clampToRing(p.x, p.y);
+            state.controlPoint.x = clamped.x;
+            state.controlPoint.y = clamped.y;
+            markDirty();
+
+            // Send position to server (scaled back to 500px coordinate space)
+            const sx = state.controlPoint.x / SCALE;
+            const sy = state.controlPoint.y / SCALE;
+            socket.emit('set_position', { x: Math.round(sx * 10) / 10, y: Math.round(sy * 10) / 10 });
+        }
+
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('touchmove', (e) => {
+            if (overrideDragging) {
+                handleDragMove(e);
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('mouseup', cancelOverrideHold);
+        document.addEventListener('touchend', cancelOverrideHold);
+
+        // ── Keyboard shortcuts ───────────────────────────────────────
+        document.addEventListener('keydown', (e) => {
+            const keyMap = {
+                '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
+                '9': 9, '0': 10, '-': 11, '=': 12, 'q': 13, 'w': 14, 'e': 15, 'r': 16,
+            };
+            const slot = keyMap[e.key.toLowerCase()];
+            if (slot && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                triggerFade(slot);
+                e.preventDefault();
+            }
+            if (e.key === 'Escape') {
+                socket.emit('stop_fade');
+                e.preventDefault();
+            }
+            if (e.key === ' ') {
+                socket.emit('pause_fade');
+                e.preventDefault();
+            }
+        });
+
+        // ── Socket.IO connection ─────────────────────────────────────
+        const socket = io();
+
+        socket.on('connect', () => {
+            connStatus.textContent = 'Connected';
+            connStatus.classList.add('connected');
+        });
+
+        socket.on('disconnect', () => {
+            connStatus.textContent = 'Disconnected';
+            connStatus.classList.remove('connected');
+        });
+
+        // Device updates
+        socket.on('device_update', (data) => {
+            state.devices = data;
+            // Clear position cache since device count may have changed
+            for (const key in _cachedPositions) delete _cachedPositions[key];
+            markDirty();
+        });
+
+        // Audio levels
+        socket.on('audio_levels', (levels) => {
+            state.audioLevels = levels;
+            markDirty();
+        });
+
+        // Audio energy (visualizer)
+        socket.on('audio_energy', (data) => {
+            state.vizEnergy = data.energy || 0;
+            if (state.vizEnergy > 0.01) markDirty();
+        });
+
+        // Spectrum + beat data
+        socket.on('audio_spectrum', (data) => {
+            if (data.bands) {
+                for (let i = 0; i < 8; i++) state.vizSpectrum[i] = data.bands[i] || 0;
+            }
+            if (data.beat !== undefined) state.vizBeat = data.beat;
+            if (data.bpm !== undefined) state.vizBPM = data.bpm;
+            markDirty();
+        });
+
+        // Fade playback (animate control point + update progress)
+        socket.on('fade_playback', (data) => {
+            // Move control point (scale from 500px to 350px coordinate space)
+            state.controlPoint.x = data.x * SCALE;
+            state.controlPoint.y = data.y * SCALE;
+
+            // Track active fade
+            activeFadeId = data.fade_id;
+            // Find which slot this fade_id belongs to
+            for (const [slot, fade] of Object.entries(fadeSlots)) {
+                if (fade.fade_id === data.fade_id) {
+                    if (activeFadeSlot !== parseInt(slot)) {
+                        activeFadeSlot = parseInt(slot);
+                        updateActiveButton();
+                    }
+                    break;
+                }
+            }
+
+            // Update progress ring
+            activeFadeProgress = data.progress || 0;
+            if (activeFadeSlot) {
+                updateProgressRing(activeFadeSlot, activeFadeProgress);
+            }
+
+            markDirty();
+        });
+
+        // Fade ended
+        socket.on('fade_ended', (data) => {
+            if (activeFadeSlot) {
+                resetProgressRing(activeFadeSlot);
+            }
+            activeFadeId = null;
+            activeFadeSlot = null;
+            activeFadeProgress = 0;
+            updateActiveButton();
+
+            // Reset control point to center
+            state.controlPoint.x = CENTER;
+            state.controlPoint.y = CENTER;
+            markDirty();
+        });
+
+        // Spotify updates
+        socket.on('spotify_update', (data) => {
+            if (data.track) {
+                spMini.classList.add('visible');
+                spTrack.textContent = data.track;
+                spArtist.textContent = data.artist || '';
+                if (data.album_art) {
+                    spArt.src = data.album_art;
+                    spArt.style.display = 'block';
+                } else {
+                    spArt.style.display = 'none';
+                }
+            } else {
+                spMini.classList.remove('visible');
+            }
+        });
+
+        // ── Load saved fades from API ────────────────────────────────
+        function loadFades() {
+            fetch('/api/fades')
+                .then(r => r.json())
+                .then(data => {
+                    fadeSlots = {};
+                    for (const [slot, fade] of Object.entries(data)) {
+                        fadeSlots[parseInt(slot)] = {
+                            name: fade.name || 'Fade ' + slot,
+                            duration_ms: fade.duration_ms || 0,
+                            fade_id: parseInt(slot),
+                        };
+                    }
+                    buildGrid();
+                })
+                .catch(err => {
+                    console.warn('Failed to load fades:', err);
+                    buildGrid();
+                });
+        }
+
+        // Initial load
+        loadFades();
+
+        // Periodically refresh fades (in case studio page saves new ones)
+        setInterval(loadFades, 10000);
+
+    })();
+    </script>
+</body>
+</html>

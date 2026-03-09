@@ -1369,6 +1369,16 @@ def index():
     return resp
 
 
+@app.route("/perform")
+def perform():
+    """Serve the perform page for live sets."""
+    resp = make_response(render_template("perform.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 @app.route("/api/devices", methods=["GET"])
 def api_devices():
     """Return the current list of active playback devices as JSON."""

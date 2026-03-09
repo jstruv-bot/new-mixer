@@ -176,6 +176,12 @@ class TestRESTEndpoints:
         assert resp.status_code == 200
         assert b"html" in resp.data.lower()
 
+    def test_perform_route(self, client):
+        """GET /perform returns the perform page."""
+        resp = client.get('/perform')
+        assert resp.status_code == 200
+        assert b"html" in resp.data.lower()
+
 
 # ---------------------------------------------------------------------------
 # TestAudioLevels
