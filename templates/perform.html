@@ -288,6 +288,17 @@
         // ── DOM refs ─────────────────────────────────────────────────
         const canvas       = document.getElementById('mixer-canvas');
         const ctx          = canvas.getContext('2d');
+
+        // HiDPI / Retina scaling
+        const DPR = window.devicePixelRatio || 1;
+        if (DPR > 1) {
+            canvas.width = CANVAS_SIZE * DPR;
+            canvas.height = CANVAS_SIZE * DPR;
+            canvas.style.width = CANVAS_SIZE + 'px';
+            canvas.style.height = CANVAS_SIZE + 'px';
+            ctx.scale(DPR, DPR);
+        }
+
         const gridEl       = document.getElementById('trigger-grid');
         const connStatus   = document.getElementById('conn-status');
         const overrideSvg  = document.getElementById('override-svg');
@@ -948,6 +959,9 @@
         socket.on('disconnect', () => {
             connStatus.textContent = 'Disconnected';
             connStatus.classList.remove('connected');
+            cancelOverrideHold();  // Clean up any active override
+            overrideDragging = false;
+            overrideActive = false;
         });
 
         // Device updates
@@ -1017,10 +1031,6 @@
             activeFadeSlot = null;
             activeFadeProgress = 0;
             updateActiveButton();
-
-            // Reset control point to center
-            state.controlPoint.x = CENTER;
-            state.controlPoint.y = CENTER;
             markDirty();
         });
 

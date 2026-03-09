@@ -2090,6 +2090,31 @@ def ws_override_fade(data=None):
     ws_stop_fade()
 
 
+@socketio.on('set_position')
+def ws_set_position(data):
+    """Set control point position and update speaker volumes (used by perform page override)."""
+    x = data.get('x', 250)
+    y = data.get('y', 250)
+    device_positions = _get_device_positions()
+    with _state_lock:
+        curve_type = 'inverse-square'
+        min_vols = dict(_min_volumes)
+    volumes = compute_volumes_from_position(x, y, device_positions, curve_type, min_vols)
+    for did, vol in volumes.items():
+        audio_router.set_volume(did, vol)
+        with _state_lock:
+            _last_known_volumes[did] = vol
+    # Broadcast position to all clients
+    socketio.emit('fade_playback', {
+        'fade_id': None,
+        'time_ms': 0,
+        'x': round(x, 1),
+        'y': round(y, 1),
+        'progress': 0,
+        'state': 'override',
+    })
+
+
 def _spotify_poller():
     """Background thread: polls Spotify every 3s, emits via WebSocket."""
     while not _shutdown_event.is_set():
