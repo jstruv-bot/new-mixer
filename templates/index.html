@@ -1613,6 +1613,35 @@
 
         // 4. Control point (draggable dot)
         drawControlPoint();
+
+        // Recording path trail
+        if (state.recording && state.recordingKeyframes.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 80, 80, 0.3)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(state.recordingKeyframes[0].x, state.recordingKeyframes[0].y);
+            for (let i = 1; i < state.recordingKeyframes.length; i++) {
+                ctx.lineTo(state.recordingKeyframes[i].x, state.recordingKeyframes[i].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Recording indicator on mixer canvas
+        if (state.recording) {
+            ctx.save();
+            ctx.fillStyle = '#ff5050';
+            ctx.beginPath();
+            ctx.arc(20, 20, 6, 0, Math.PI * 2);
+            ctx.fill();
+            // Pulsing glow
+            ctx.globalAlpha = 0.3 + 0.3 * Math.sin(performance.now() / 300);
+            ctx.beginPath();
+            ctx.arc(20, 20, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
     }
 
     /**

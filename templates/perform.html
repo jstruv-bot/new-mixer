@@ -249,6 +249,9 @@
         </svg>
     </div>
 
+    <!-- Active fade name display -->
+    <div id="fade-name-display" style="text-align:center;color:#00d4ff;font-size:0.85rem;height:1.2rem;margin-top:0.3rem;opacity:0;transition:opacity 0.3s;"></div>
+
     <!-- Trigger grid (4x4) -->
     <div class="trigger-grid" id="trigger-grid">
         <!-- Populated by JS -->
@@ -307,6 +310,7 @@
         const spArt        = document.getElementById('sp-art');
         const spTrack      = document.getElementById('sp-track');
         const spArtist     = document.getElementById('sp-artist');
+        const fadeNameDisplay = document.getElementById('fade-name-display');
 
         // ── State ────────────────────────────────────────────────────
         const state = {
@@ -1019,6 +1023,10 @@
                 updateProgressRing(activeFadeSlot, activeFadeProgress);
             }
 
+            // Show fade name
+            fadeNameDisplay.textContent = fadeSlots[activeFadeSlot]?.name || 'Fade ' + activeFadeSlot;
+            fadeNameDisplay.style.opacity = '1';
+
             markDirty();
         });
 
@@ -1031,6 +1039,7 @@
             activeFadeSlot = null;
             activeFadeProgress = 0;
             updateActiveButton();
+            fadeNameDisplay.style.opacity = '0';
             markDirty();
         });
 

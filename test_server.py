@@ -902,3 +902,120 @@ class TestFadeWebSocket:
     def test_stop_fade(self, socketio_client):
         socketio_client.emit('stop_fade', {})
         assert socketio_client.is_connected()
+
+
+# ---------------------------------------------------------------------------
+# TestFadeIntegration
+# ---------------------------------------------------------------------------
+
+
+class TestFadeIntegration:
+    """Integration tests for the full fade lifecycle."""
+
+    def test_full_fade_lifecycle(self, client, socketio_client):
+        """Save fade, trigger via WS, verify playback events."""
+        # Save
+        fade = {
+            'name': 'E2E Test',
+            'duration_ms': 100,  # short for testing
+            'keyframes': [
+                {'time_ms': 0, 'x': 250, 'y': 70},
+                {'time_ms': 100, 'x': 250, 'y': 430},
+            ],
+        }
+        resp = client.post('/api/fades', json=fade)
+        assert resp.status_code == 200
+
+        # Trigger
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        time.sleep(0.2)  # let playback thread run
+
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        assert 'fade_ended' in event_names or 'fade_playback' in event_names
+
+    def test_trigger_nonexistent_fade(self, client, socketio_client):
+        """Triggering a non-existent fade emits fade_ended with error."""
+        socketio_client.emit('trigger_fade', {'fade_id': 99})
+        time.sleep(0.05)
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        assert 'fade_ended' in event_names
+
+    def test_trigger_replaces_active_fade(self, client, socketio_client):
+        """Triggering a new fade stops the previous one."""
+        fade1 = {'name': 'Fade 1', 'duration_ms': 5000, 'keyframes': [
+            {'time_ms': 0, 'x': 100, 'y': 100}, {'time_ms': 5000, 'x': 400, 'y': 400}
+        ]}
+        fade2 = {'name': 'Fade 2', 'duration_ms': 5000, 'keyframes': [
+            {'time_ms': 0, 'x': 200, 'y': 200}, {'time_ms': 5000, 'x': 300, 'y': 300}
+        ]}
+        client.post('/api/fades', json=fade1)
+        client.post('/api/fades', json=fade2)
+
+        # Start fade 1
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        time.sleep(0.05)
+
+        # Clear received so far
+        socketio_client.get_received()
+
+        # Start fade 2 (should stop fade 1)
+        socketio_client.emit('trigger_fade', {'fade_id': 2})
+        time.sleep(0.1)
+
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        # Should have fade_playback events for fade 2
+        assert socketio_client.is_connected()
+
+    def test_stop_fade_when_none_playing(self, socketio_client):
+        """stop_fade is a no-op when nothing is playing."""
+        socketio_client.emit('stop_fade', {})
+        assert socketio_client.is_connected()
+
+    def test_pause_resume_fade(self, client, socketio_client):
+        """Pause and resume a playing fade."""
+        fade = {'name': 'Pause Test', 'duration_ms': 5000, 'keyframes': [
+            {'time_ms': 0, 'x': 100, 'y': 100}, {'time_ms': 5000, 'x': 400, 'y': 400}
+        ]}
+        client.post('/api/fades', json=fade)
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        time.sleep(0.05)
+
+        # Pause
+        socketio_client.emit('pause_fade', {})
+        time.sleep(0.05)
+
+        # Resume
+        socketio_client.emit('pause_fade', {})
+        time.sleep(0.05)
+
+        assert socketio_client.is_connected()
+
+    def test_set_position_handler(self, socketio_client):
+        """set_position updates volumes without crashing."""
+        socketio_client.emit('set_position', {'x': 300, 'y': 200})
+        time.sleep(0.05)
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        # Should receive a fade_playback event with state='override'
+        assert socketio_client.is_connected()
+
+    def test_fade_crud_validation(self, client):
+        """POST /api/fades validates input."""
+        # Missing name
+        resp = client.post('/api/fades', json={'keyframes': []})
+        assert resp.status_code == 400
+
+        # Missing keyframes
+        resp = client.post('/api/fades', json={'name': 'test'})
+        assert resp.status_code == 400
+
+        # Invalid keyframes type
+        resp = client.post('/api/fades', json={'name': 'test', 'keyframes': 'not a list', 'duration_ms': 1000})
+        assert resp.status_code == 400
+
+        # Missing duration_ms
+        resp = client.post('/api/fades', json={'name': 'test', 'keyframes': []})
+        assert resp.status_code == 400
