@@ -269,6 +269,73 @@
             50% { opacity: 0.3; }
         }
 
+        /* ── Fade Sidebar ───────────────────────────────────── */
+        .fade-sidebar {
+            position: fixed;
+            right: 1rem;
+            top: 1rem;
+            width: 200px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 10px;
+            padding: 1rem;
+            max-height: calc(100vh - 2rem);
+            overflow-y: auto;
+            z-index: 10;
+        }
+        .fade-slot-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+        .fade-slot-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.5rem;
+            border-radius: 6px;
+            background: rgba(0, 212, 255, 0.04);
+            border: 1px solid rgba(0, 212, 255, 0.1);
+            font-size: 0.75rem;
+            color: #c0c0d8;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .fade-slot-item:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+        .fade-slot-item.empty {
+            color: #555;
+            cursor: default;
+        }
+        .fade-slot-item .slot-num {
+            color: #00d4ff;
+            font-weight: bold;
+            min-width: 20px;
+        }
+        .fade-slot-item .slot-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fade-slot-item .slot-duration {
+            color: #888;
+            font-size: 0.7rem;
+        }
+        .fade-slot-item .slot-delete {
+            background: none;
+            border: none;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0 2px;
+            opacity: 0.5;
+        }
+        .fade-slot-item .slot-delete:hover {
+            opacity: 1;
+        }
+
         /* ── Screen reader only ──────────────────────────────── */
         .sr-only {
             position: absolute; width: 1px; height: 1px;
@@ -454,6 +521,13 @@
             <button id="latency-close" type="button">&times;</button>
         </div>
         <div id="latency-list" style="font-family:monospace;font-size:0.8rem;"></div>
+    </div>
+
+    <div id="fade-sidebar" class="fade-sidebar">
+        <h3 style="color:#00d4ff;font-size:0.9rem;margin:0 0 0.6rem;">Fade Slots</h3>
+        <div id="fade-slot-list" class="fade-slot-list"></div>
+        <button id="btn-save-fade" type="button" class="transport-btn" disabled
+                style="width:100%;margin-top:0.5rem;">Save Recording</button>
     </div>
 
     <div id="aria-live" aria-live="polite" class="sr-only"></div>
@@ -2139,6 +2213,7 @@
         const hasKeyframes = state.recordingKeyframes.length > 0;
         btnPreview.disabled = !hasKeyframes;
         btnClearRec.disabled = !hasKeyframes;
+        btnSaveFade.disabled = !hasKeyframes;
         recIndicator.style.display = 'none';
     });
 
@@ -2165,6 +2240,123 @@
         btnPreview.disabled = true;
         btnClearRec.disabled = true;
         recTimer.textContent = '0:00';
+    });
+
+    // ── Toast Notification ──────────────────────────────────────────────
+    function showToast(msg) {
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:rgba(0,212,255,0.15);color:#00d4ff;border:1px solid rgba(0,212,255,0.3);padding:0.5rem 1.2rem;border-radius:8px;font-size:0.85rem;z-index:100;transition:opacity 0.3s;';
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        setTimeout(() => { toast.remove(); }, 2500);
+    }
+
+    // ── Fade Slot Sidebar ───────────────────────────────────────────────
+    const fadeSlotList = document.getElementById('fade-slot-list');
+    const btnSaveFade = document.getElementById('btn-save-fade');
+    let fadeSlots = {};  // slot -> {name, duration_ms}
+
+    async function fetchFadeSlots() {
+        try {
+            const resp = await fetch('/api/fades');
+            fadeSlots = await resp.json();
+            // Convert string keys to int
+            const converted = {};
+            for (const [k, v] of Object.entries(fadeSlots)) {
+                converted[parseInt(k)] = v;
+            }
+            fadeSlots = converted;
+        } catch (e) {
+            console.error('Failed to fetch fades:', e);
+        }
+        renderFadeSlots();
+    }
+
+    function renderFadeSlots() {
+        fadeSlotList.innerHTML = '';
+        for (let i = 1; i <= 16; i++) {
+            const slot = fadeSlots[i];
+            const item = document.createElement('div');
+            item.className = 'fade-slot-item' + (slot ? '' : ' empty');
+
+            const num = document.createElement('span');
+            num.className = 'slot-num';
+            num.textContent = i;
+
+            const name = document.createElement('span');
+            name.className = 'slot-name';
+
+            if (slot) {
+                name.textContent = slot.name || 'Fade ' + i;
+                const dur = document.createElement('span');
+                dur.className = 'slot-duration';
+                const secs = Math.round(slot.duration_ms / 1000);
+                dur.textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+
+                const del = document.createElement('button');
+                del.className = 'slot-delete';
+                del.textContent = '\u00d7';
+                del.title = 'Delete';
+                del.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await fetch('/api/fades/' + i, { method: 'DELETE' });
+                    fetchFadeSlots();
+                });
+
+                item.append(num, name, dur, del);
+
+                // Click to load preview
+                item.addEventListener('click', async () => {
+                    try {
+                        const resp = await fetch('/api/fades/' + i);
+                        const fade = await resp.json();
+                        state.recordedFade = {
+                            keyframes: fade.keyframes,
+                            duration_ms: fade.duration_ms,
+                        };
+                        btnPreview.disabled = false;
+                        btnClearRec.disabled = false;
+                        const secs = Math.round(fade.duration_ms / 1000);
+                        recTimer.textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+                        showToast('Loaded: ' + (fade.name || 'Fade ' + i));
+                    } catch (e) {
+                        console.error('Failed to load fade:', e);
+                    }
+                });
+            } else {
+                name.textContent = '\u2014';
+                item.append(num, name);
+            }
+
+            fadeSlotList.appendChild(item);
+        }
+    }
+
+    btnSaveFade.addEventListener('click', async () => {
+        if (!state.recordedFade) return;
+        const name = prompt('Name this fade:', 'Fade');
+        if (name === null) return;
+        try {
+            const resp = await fetch('/api/fades', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name || 'Fade',
+                    duration_ms: state.recordedFade.duration_ms,
+                    keyframes: state.recordedFade.keyframes,
+                }),
+            });
+            const data = await resp.json();
+            if (data.slot) {
+                showToast('Saved to slot ' + data.slot);
+                fetchFadeSlots();
+            } else {
+                showToast(data.error || 'Save failed');
+            }
+        } catch (e) {
+            console.error('Failed to save fade:', e);
+        }
     });
 
     // ── Animation loop ─────────────────────────────────────────────────
@@ -2343,6 +2535,7 @@
     // Initial fetch on page load (WS connect handler will push updates too).
     fetchDevices().then(() => updateVolumes());
     fetchRouterStatus();
+    fetchFadeSlots();
 
     // No polling intervals needed — WebSocket push handles updates.
     // HTTP fallback polling is started automatically if WS disconnects.
