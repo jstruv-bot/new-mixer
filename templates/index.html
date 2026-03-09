@@ -222,6 +222,53 @@
             pointer-events: none; white-space: nowrap;
         }
 
+        /* ── Recording Transport Bar ─────────────────────────── */
+        .transport-bar {
+            margin-top: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .transport-btn {
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .transport-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .record-btn {
+            background: rgba(255, 80, 80, 0.15);
+            color: #ff5050;
+            border: 1px solid rgba(255, 80, 80, 0.4);
+        }
+        .record-btn.recording {
+            background: rgba(255, 80, 80, 0.3);
+            animation: rec-pulse 1s infinite;
+        }
+        @keyframes rec-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.4); }
+            50% { box-shadow: 0 0 8px 2px rgba(255, 80, 80, 0.6); }
+        }
+        .rec-timer {
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #c0c0d8;
+            min-width: 40px;
+        }
+        .rec-indicator {
+            color: #ff5050;
+            font-weight: bold;
+            font-size: 0.8rem;
+            animation: rec-blink 1s infinite;
+        }
+        @keyframes rec-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         /* ── Screen reader only ──────────────────────────────── */
         .sr-only {
             position: absolute; width: 1px; height: 1px;
@@ -237,6 +284,15 @@
     <div class="canvas-wrap">
         <canvas id="mixer" width="500" height="500" tabindex="0" role="application"
                 aria-label="Bluetooth speaker crossfade mixer. Use arrow keys to move control point, Tab to focus speakers."></canvas>
+    </div>
+
+    <div class="transport-bar" id="transport-bar">
+        <button id="btn-record" type="button" class="transport-btn record-btn">Record</button>
+        <button id="btn-stop-rec" type="button" class="transport-btn" disabled>Stop</button>
+        <button id="btn-preview" type="button" class="transport-btn" disabled>Play Preview</button>
+        <button id="btn-clear-rec" type="button" class="transport-btn" disabled>Clear</button>
+        <span id="rec-timer" class="rec-timer">0:00</span>
+        <span id="rec-indicator" class="rec-indicator" style="display:none;">REC</span>
     </div>
 
     <div class="status-bar">
@@ -486,6 +542,13 @@
         vizBeatFlashAlpha: 0,
         vizParticles:   [],
         vizWaveformAngle: 0,
+        // Recording
+        recording: false,
+        recordingKeyframes: [],
+        recordingStartTime: 0,
+        recordedFade: null,  // {keyframes, duration_ms} after recording stops
+        previewing: false,
+        previewStartTime: 0,
     };
 
     const VIZ_THEMES = [
@@ -2018,6 +2081,84 @@
         }
     }
 
+    // ── Recording Transport ─────────────────────────────────────────
+    const btnRecord = document.getElementById('btn-record');
+    const btnStopRec = document.getElementById('btn-stop-rec');
+    const btnPreview = document.getElementById('btn-preview');
+    const btnClearRec = document.getElementById('btn-clear-rec');
+    const recTimer = document.getElementById('rec-timer');
+    const recIndicator = document.getElementById('rec-indicator');
+
+    let _recSampleInterval = null;
+
+    btnRecord.addEventListener('click', () => {
+        state.recording = true;
+        state.recordingKeyframes = [];
+        state.recordingStartTime = performance.now();
+        state.recordedFade = null;
+
+        btnRecord.disabled = true;
+        btnRecord.classList.add('recording');
+        btnStopRec.disabled = false;
+        btnPreview.disabled = true;
+        btnClearRec.disabled = true;
+        recIndicator.style.display = '';
+
+        // Sample at ~30fps
+        _recSampleInterval = setInterval(() => {
+            const elapsed = performance.now() - state.recordingStartTime;
+            state.recordingKeyframes.push({
+                time_ms: Math.round(elapsed),
+                x: Math.round(state.controlPoint.x * 10) / 10,
+                y: Math.round(state.controlPoint.y * 10) / 10,
+            });
+            // Update timer
+            const secs = Math.floor(elapsed / 1000);
+            const mins = Math.floor(secs / 60);
+            recTimer.textContent = mins + ':' + String(secs % 60).padStart(2, '0');
+        }, 33);
+    });
+
+    btnStopRec.addEventListener('click', () => {
+        if (!state.recording) return;
+        clearInterval(_recSampleInterval);
+        state.recording = false;
+
+        const duration = performance.now() - state.recordingStartTime;
+        state.recordedFade = {
+            keyframes: state.recordingKeyframes,
+            duration_ms: Math.round(duration),
+        };
+
+        btnRecord.disabled = false;
+        btnRecord.classList.remove('recording');
+        btnStopRec.disabled = true;
+        btnPreview.disabled = false;
+        btnClearRec.disabled = false;
+        recIndicator.style.display = 'none';
+    });
+
+    btnPreview.addEventListener('click', () => {
+        if (!state.recordedFade) return;
+        if (state.previewing) {
+            // Stop preview
+            state.previewing = false;
+            btnPreview.textContent = 'Play Preview';
+            return;
+        }
+        state.previewing = true;
+        state.previewStartTime = performance.now();
+        btnPreview.textContent = 'Stop Preview';
+    });
+
+    btnClearRec.addEventListener('click', () => {
+        state.recordedFade = null;
+        state.recordingKeyframes = [];
+        btnPreview.disabled = true;
+        btnClearRec.disabled = true;
+        recTimer.textContent = '0:00';
+    });
+
     // ── Animation loop ─────────────────────────────────────────────────
 
     const LERP_FACTOR = 0.15;
@@ -2073,6 +2214,35 @@
                     if (Math.abs(newVal - current) > 0.001) animating = true;
                     state.displayLevels[id] = newVal;
                 }
+            }
+        }
+
+        // Preview playback
+        if (state.previewing && state.recordedFade && !state.isDragging) {
+            const elapsed = performance.now() - state.previewStartTime;
+            if (elapsed >= state.recordedFade.duration_ms) {
+                state.previewing = false;
+                btnPreview.textContent = 'Play Preview';
+            } else {
+                const kfs = state.recordedFade.keyframes;
+                // Find surrounding keyframes
+                let kfA = kfs[0], kfB = kfs[0];
+                for (let i = 0; i < kfs.length - 1; i++) {
+                    if (kfs[i].time_ms <= elapsed && kfs[i + 1].time_ms >= elapsed) {
+                        kfA = kfs[i];
+                        kfB = kfs[i + 1];
+                        break;
+                    }
+                }
+                if (elapsed >= kfs[kfs.length - 1].time_ms) {
+                    kfA = kfB = kfs[kfs.length - 1];
+                }
+                const span = kfB.time_ms - kfA.time_ms;
+                const t = span > 0 ? (elapsed - kfA.time_ms) / span : 0;
+                state.controlPoint.x = kfA.x + (kfB.x - kfA.x) * t;
+                state.controlPoint.y = kfA.y + (kfB.y - kfA.y) * t;
+                updateVolumes();
+                animating = true;
             }
         }
 
