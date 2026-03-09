@@ -469,7 +469,6 @@
         latencyData:    {},      // device_id -> ms
         cueMembers:     new Set(),
         cueDevice:      null,
-        currentTrackId: '',
         // Visualizer
         vizMode:        parseInt(localStorage.getItem('mixer-viz-mode') || '0'),
         vizSpectrum:    new Float32Array(8),
@@ -638,7 +637,6 @@
             spotifyDurationMs = data.duration_ms;
             spotifyLastUpdate = Date.now();
             spotifyEls.playPause.innerHTML = spotifyPlaying ? '&#9646;&#9646;' : '&#9654;';
-            state.currentTrackId = data.track_id || '';
         } else {
             spotifyEls.widget.style.display = 'none';
         }

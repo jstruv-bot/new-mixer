@@ -821,7 +821,7 @@ class AudioRouter:
                     audio = (audio * boost).clip(-32768, 32767).astype(self.NUMPY_DTYPE)
                     data = audio.tobytes()
 
-                # Compute RMS energy for Auto-DJ (exponential moving average)
+                # Compute RMS energy for visualizer effects (exponential moving average)
                 samples = np.frombuffer(data, dtype=self.NUMPY_DTYPE)
                 rms = float(np.sqrt(np.mean(samples * samples)))
                 # Normalize: float32 audio peaks at ~1.0, clamp for safety
