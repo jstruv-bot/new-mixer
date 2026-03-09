@@ -2092,6 +2092,9 @@
     let _recSampleInterval = null;
 
     btnRecord.addEventListener('click', () => {
+        if (_recSampleInterval) clearInterval(_recSampleInterval);
+        recTimer.textContent = '0:00';
+
         state.recording = true;
         state.recordingKeyframes = [];
         state.recordingStartTime = performance.now();
@@ -2133,8 +2136,9 @@
         btnRecord.disabled = false;
         btnRecord.classList.remove('recording');
         btnStopRec.disabled = true;
-        btnPreview.disabled = false;
-        btnClearRec.disabled = false;
+        const hasKeyframes = state.recordingKeyframes.length > 0;
+        btnPreview.disabled = !hasKeyframes;
+        btnClearRec.disabled = !hasKeyframes;
         recIndicator.style.display = 'none';
     });
 
@@ -2144,11 +2148,15 @@
             // Stop preview
             state.previewing = false;
             btnPreview.textContent = 'Play Preview';
+            btnRecord.disabled = false;
+            btnClearRec.disabled = false;
             return;
         }
         state.previewing = true;
         state.previewStartTime = performance.now();
         btnPreview.textContent = 'Stop Preview';
+        btnRecord.disabled = true;
+        btnClearRec.disabled = true;
     });
 
     btnClearRec.addEventListener('click', () => {
@@ -2220,11 +2228,19 @@
         // Preview playback
         if (state.previewing && state.recordedFade && !state.isDragging) {
             const elapsed = performance.now() - state.previewStartTime;
-            if (elapsed >= state.recordedFade.duration_ms) {
+            const kfs = state.recordedFade.keyframes;
+            if (kfs.length === 0) {
                 state.previewing = false;
                 btnPreview.textContent = 'Play Preview';
+                btnRecord.disabled = false;
+                btnClearRec.disabled = false;
+            } else if (elapsed >= state.recordedFade.duration_ms) {
+                state.previewing = false;
+                btnPreview.textContent = 'Play Preview';
+                btnRecord.disabled = false;
+                btnClearRec.disabled = false;
+                markDirty();
             } else {
-                const kfs = state.recordedFade.keyframes;
                 // Find surrounding keyframes
                 let kfA = kfs[0], kfB = kfs[0];
                 for (let i = 0; i < kfs.length - 1; i++) {
@@ -2247,7 +2263,7 @@
         }
 
         // Auto-bounce — customizable patterns
-        if (state.autoBounce !== 'off' && !state.isDragging) {
+        if (state.autoBounce !== 'off' && !state.isDragging && !state.previewing && !state.recording) {
             const n = state.devices.length;
             if (n >= 2) {
                 const now = performance.now() / 1000;
