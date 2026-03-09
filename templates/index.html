@@ -2738,9 +2738,7 @@
             tlSelectedKf = -1;
             // Update duration
             const kfs = state.recordedFade.keyframes;
-            if (kfs.length > 0) {
-                state.recordedFade.duration_ms = kfs[kfs.length - 1].time_ms;
-            }
+            state.recordedFade.duration_ms = kfs.length > 0 ? kfs[kfs.length - 1].time_ms : 0;
             drawTimeline();
         }
     }
@@ -2764,7 +2762,7 @@
     }
 
     function tlScrubToPlayhead() {
-        // Update mixer control point to match position at playhead time
+        // Update mixer control point to match position at playhead time (visual only, no audio)
         if (!state.recordedFade || state.recordedFade.keyframes.length === 0) return;
         const kfs = state.recordedFade.keyframes;
         const t = tlPlayhead;
@@ -2786,7 +2784,6 @@
                 }
             }
         }
-        updateVolumes();
         markDirty();
     }
 
@@ -2831,9 +2828,7 @@
         state.recordedFade.keyframes.splice(tlSelectedKf, 1);
         tlSelectedKf = -1;
         const kfs = state.recordedFade.keyframes;
-        if (kfs.length > 0) {
-            state.recordedFade.duration_ms = kfs[kfs.length - 1].time_ms;
-        }
+        state.recordedFade.duration_ms = kfs.length > 0 ? kfs[kfs.length - 1].time_ms : 0;
         drawTimeline();
     });
 
