@@ -2447,12 +2447,19 @@
     let tlDragging = false;    // currently dragging a keyframe
     let tlDragType = '';       // 'x' or 'y' lane
 
+    let _tlLastW = 0, _tlLastH = 0;
     function tlResizeCanvas() {
         const rect = tlCanvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
-        tlCanvas.width = Math.round(rect.width * dpr);
-        tlCanvas.height = Math.round(rect.height * dpr);
-        tlCtx.scale(dpr, dpr);
+        const w = Math.round(rect.width * dpr);
+        const h = Math.round(rect.height * dpr);
+        if (w !== _tlLastW || h !== _tlLastH) {
+            _tlLastW = w;
+            _tlLastH = h;
+            tlCanvas.width = w;
+            tlCanvas.height = h;
+        }
+        tlCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     function tlTimeToX(time_ms) {
@@ -2724,6 +2731,7 @@
             drawTimeline();
         }
         tlDragging = false;
+        tlDragType = '';
     }
 
     function onTimelineContextMenu(e) {
@@ -2734,6 +2742,7 @@
         const my = e.clientY - rect.top;
         const hit = timelineHitTest(mx, my);
         if (hit) {
+            if (!confirm('Delete this keyframe?')) return;
             state.recordedFade.keyframes.splice(hit.index, 1);
             tlSelectedKf = -1;
             // Update duration
