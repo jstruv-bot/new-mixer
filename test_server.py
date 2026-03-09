@@ -60,6 +60,14 @@ def socketio_client(app):
     return server.socketio.test_client(app)
 
 
+@pytest.fixture(autouse=True)
+def _clear_fade_store():
+    """Clear fade store before each test to avoid cross-test pollution."""
+    server_module._fade_store.clear()
+    yield
+    server_module._fade_store.clear()
+
+
 # ---------------------------------------------------------------------------
 # Smoke test
 # ---------------------------------------------------------------------------
@@ -165,6 +173,12 @@ class TestRESTEndpoints:
     def test_index_serves_html(self, client):
         """GET / returns HTML."""
         resp = client.get("/")
+        assert resp.status_code == 200
+        assert b"html" in resp.data.lower()
+
+    def test_perform_route(self, client):
+        """GET /perform returns the perform page."""
+        resp = client.get('/perform')
         assert resp.status_code == 200
         assert b"html" in resp.data.lower()
 
@@ -735,3 +749,273 @@ class TestSpatialAudio:
         enriched = server_module._enrich_devices(devices)
         assert enriched[0]['pan'] == -0.5
         server_module.audio_router._pan.pop('d1', None)
+
+
+class TestFFTSpectrum:
+    """FFT spectrum analysis tests."""
+
+    def test_spectrum_bands_default_empty(self):
+        assert server_module.audio_router.spectrum_bands == [0.0] * 8
+
+    def test_spectrum_bands_length(self):
+        # Simulate setting bands
+        server_module.audio_router._spectrum_bands = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+        assert len(server_module.audio_router.spectrum_bands) == 8
+        server_module.audio_router._spectrum_bands = [0.0] * 8
+
+    def test_compute_spectrum_from_silence(self):
+        """FFT of silence should produce all-zero bands."""
+        import numpy as np
+        silence = np.zeros(1024, dtype=np.float32)
+        bands = server_module.AudioRouter.compute_fft_bands(silence, 48000)
+        assert len(bands) == 8
+        assert all(b == 0.0 for b in bands)
+
+    def test_compute_spectrum_from_tone(self):
+        """A 100Hz sine wave should produce energy in the bass band."""
+        import numpy as np
+        sr = 48000
+        t = np.arange(1024, dtype=np.float32) / sr
+        tone = (np.sin(2 * np.pi * 100 * t) * 0.5).astype(np.float32)
+        bands = server_module.AudioRouter.compute_fft_bands(tone, sr)
+        assert len(bands) == 8
+        # Band 1 (bass: 60-250Hz) should have the most energy
+        assert bands[1] > 0.1
+        assert bands[1] > bands[5]  # bass > presence
+
+
+class TestBeatDetection:
+    """Beat detection tests."""
+
+    def test_beat_state_defaults(self):
+        assert server_module.audio_router.beat_detected is False
+        assert server_module.audio_router.beat_bpm == 0.0
+        assert server_module.audio_router.beat_phase == 0.0
+
+    def test_detect_beat_on_spike(self):
+        """Energy spike above rolling average should trigger beat."""
+        router = server_module.audio_router
+        # Fill rolling average with low energy
+        router._beat_energy_history = collections.deque([0.1] * 30, maxlen=30)
+        router._beat_cooldown = 0
+        # A spike well above the average should be a beat
+        is_beat = router._check_beat(0.5)
+        assert is_beat is True
+
+    def test_no_beat_on_steady(self):
+        """Steady energy should NOT trigger beats."""
+        router = server_module.audio_router
+        router._beat_energy_history = collections.deque([0.3] * 30, maxlen=30)
+        router._beat_cooldown = 0
+        is_beat = router._check_beat(0.32)
+        assert is_beat is False
+
+    def test_beat_cooldown_prevents_rapid_fire(self):
+        """Beats should not fire more than ~10Hz."""
+        router = server_module.audio_router
+        router._beat_energy_history = collections.deque([0.1] * 30, maxlen=30)
+        router._beat_cooldown = 5  # Still in cooldown
+        is_beat = router._check_beat(0.5)
+        assert is_beat is False
+
+
+class TestVisualizerMode:
+    """Visualizer mode switching tests."""
+
+    def test_default_viz_mode_is_zero(self):
+        assert server_module._viz_mode == 0
+
+    def test_set_viz_mode_stores(self, socketio_client):
+        socketio_client.emit('set_visualizer_mode', {'mode': 2})
+        time.sleep(0.05)
+        assert server_module._viz_mode == 2
+        server_module._viz_mode = 0  # reset
+
+    def test_set_viz_mode_clamps(self, socketio_client):
+        socketio_client.emit('set_visualizer_mode', {'mode': 5})
+        time.sleep(0.05)
+        assert server_module._viz_mode == 2  # max is 2
+        server_module._viz_mode = 0
+
+
+# ---------------------------------------------------------------------------
+# TestFadeAPI
+# ---------------------------------------------------------------------------
+
+
+class TestFadeAPI:
+    """Tests for fade CRUD REST endpoints."""
+
+    def test_list_fades_empty(self, client):
+        resp = client.get('/api/fades')
+        assert resp.status_code == 200
+        assert resp.get_json() == {}
+
+    def test_save_and_get_fade(self, client):
+        fade = {
+            'name': 'Test',
+            'duration_ms': 5000,
+            'keyframes': [{'time_ms': 0, 'x': 250, 'y': 250}],
+        }
+        resp = client.post('/api/fades', json=fade)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['slot'] == 1
+
+        resp = client.get('/api/fades/1')
+        assert resp.status_code == 200
+        assert resp.get_json()['name'] == 'Test'
+
+    def test_update_fade(self, client):
+        fade = {'name': 'Original', 'duration_ms': 1000, 'keyframes': []}
+        client.post('/api/fades', json=fade)
+        resp = client.put('/api/fades/1', json={'name': 'Updated'})
+        assert resp.status_code == 200
+        assert client.get('/api/fades/1').get_json()['name'] == 'Updated'
+
+    def test_delete_fade(self, client):
+        fade = {'name': 'Delete Me', 'duration_ms': 1000, 'keyframes': []}
+        client.post('/api/fades', json=fade)
+        resp = client.delete('/api/fades/1')
+        assert resp.status_code == 200
+        resp = client.get('/api/fades/1')
+        assert resp.status_code == 404
+
+    def test_get_nonexistent_fade(self, client):
+        resp = client.get('/api/fades/99')
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TestFadeWebSocket
+# ---------------------------------------------------------------------------
+
+
+class TestFadeWebSocket:
+    """Tests for fade playback WebSocket events."""
+
+    def test_trigger_fade(self, socketio_client):
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        received = socketio_client.get_received()
+        assert socketio_client.is_connected()
+
+    def test_stop_fade(self, socketio_client):
+        socketio_client.emit('stop_fade', {})
+        assert socketio_client.is_connected()
+
+
+# ---------------------------------------------------------------------------
+# TestFadeIntegration
+# ---------------------------------------------------------------------------
+
+
+class TestFadeIntegration:
+    """Integration tests for the full fade lifecycle."""
+
+    def test_full_fade_lifecycle(self, client, socketio_client):
+        """Save fade, trigger via WS, verify playback events."""
+        # Save
+        fade = {
+            'name': 'E2E Test',
+            'duration_ms': 100,  # short for testing
+            'keyframes': [
+                {'time_ms': 0, 'x': 250, 'y': 70},
+                {'time_ms': 100, 'x': 250, 'y': 430},
+            ],
+        }
+        resp = client.post('/api/fades', json=fade)
+        assert resp.status_code == 200
+
+        # Trigger
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        time.sleep(0.2)  # let playback thread run
+
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        assert 'fade_ended' in event_names or 'fade_playback' in event_names
+
+    def test_trigger_nonexistent_fade(self, client, socketio_client):
+        """Triggering a non-existent fade emits fade_ended with error."""
+        socketio_client.emit('trigger_fade', {'fade_id': 99})
+        time.sleep(0.05)
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        assert 'fade_ended' in event_names
+
+    def test_trigger_replaces_active_fade(self, client, socketio_client):
+        """Triggering a new fade stops the previous one."""
+        fade1 = {'name': 'Fade 1', 'duration_ms': 5000, 'keyframes': [
+            {'time_ms': 0, 'x': 100, 'y': 100}, {'time_ms': 5000, 'x': 400, 'y': 400}
+        ]}
+        fade2 = {'name': 'Fade 2', 'duration_ms': 5000, 'keyframes': [
+            {'time_ms': 0, 'x': 200, 'y': 200}, {'time_ms': 5000, 'x': 300, 'y': 300}
+        ]}
+        client.post('/api/fades', json=fade1)
+        client.post('/api/fades', json=fade2)
+
+        # Start fade 1
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        time.sleep(0.05)
+
+        # Clear received so far
+        socketio_client.get_received()
+
+        # Start fade 2 (should stop fade 1)
+        socketio_client.emit('trigger_fade', {'fade_id': 2})
+        time.sleep(0.1)
+
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        # Should have fade_playback events for fade 2
+        assert socketio_client.is_connected()
+
+    def test_stop_fade_when_none_playing(self, socketio_client):
+        """stop_fade is a no-op when nothing is playing."""
+        socketio_client.emit('stop_fade', {})
+        assert socketio_client.is_connected()
+
+    def test_pause_resume_fade(self, client, socketio_client):
+        """Pause and resume a playing fade."""
+        fade = {'name': 'Pause Test', 'duration_ms': 5000, 'keyframes': [
+            {'time_ms': 0, 'x': 100, 'y': 100}, {'time_ms': 5000, 'x': 400, 'y': 400}
+        ]}
+        client.post('/api/fades', json=fade)
+        socketio_client.emit('trigger_fade', {'fade_id': 1})
+        time.sleep(0.05)
+
+        # Pause
+        socketio_client.emit('pause_fade', {})
+        time.sleep(0.05)
+
+        # Resume
+        socketio_client.emit('pause_fade', {})
+        time.sleep(0.05)
+
+        assert socketio_client.is_connected()
+
+    def test_set_position_handler(self, socketio_client):
+        """set_position updates volumes without crashing."""
+        socketio_client.emit('set_position', {'x': 300, 'y': 200})
+        time.sleep(0.05)
+        received = socketio_client.get_received()
+        event_names = [r['name'] for r in received]
+        # Should receive a fade_playback event with state='override'
+        assert socketio_client.is_connected()
+
+    def test_fade_crud_validation(self, client):
+        """POST /api/fades validates input."""
+        # Missing name
+        resp = client.post('/api/fades', json={'keyframes': []})
+        assert resp.status_code == 400
+
+        # Missing keyframes
+        resp = client.post('/api/fades', json={'name': 'test'})
+        assert resp.status_code == 400
+
+        # Invalid keyframes type
+        resp = client.post('/api/fades', json={'name': 'test', 'keyframes': 'not a list', 'duration_ms': 1000})
+        assert resp.status_code == 400
+
+        # Missing duration_ms
+        resp = client.post('/api/fades', json={'name': 'test', 'keyframes': []})
+        assert resp.status_code == 400

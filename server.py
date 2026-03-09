@@ -26,6 +26,8 @@ from flask_socketio import SocketIO, emit
 import html
 import requests as http_requests  # avoid collision with flask.request
 
+from fade_engine import FadeStore, compute_volumes_from_position, interpolate_position
+
 # pycaw / COM imports for Windows Core Audio
 import comtypes
 from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
@@ -260,6 +262,14 @@ class AudioRouter:
         self._energy_level = 0.0        # real-time RMS energy (0.0-1.0), updated by capture thread
         self._pan = {}                  # device_id -> float (-1.0 left .. +1.0 right)
         self._stereo_sep = 0.0          # global stereo separation (0=mono, 1=full split)
+        self._spectrum_bands = [0.0] * 8  # 8 log-spaced frequency bands from FFT
+        self._beat_detected = False      # True on the frame a beat is detected
+        self._beat_bpm = 0.0             # estimated BPM (median of recent intervals)
+        self._beat_phase = 0.0           # 0-1 sawtooth synced to tempo
+        self._beat_energy_history = collections.deque(maxlen=30)  # rolling energy window
+        self._beat_timestamps = collections.deque(maxlen=16)      # recent beat times for BPM
+        self._beat_cooldown = 0          # frames to wait before next beat
+        self._beat_last_time = 0.0       # time.monotonic() of last beat
 
     def start(self, bt_devices):
         """Start audio routing to the given Bluetooth devices.
@@ -381,6 +391,9 @@ class AudioRouter:
         with _state_lock:
             max_vol = _max_volumes.get(device_id)
         if max_vol is not None and max_vol > 0:
+            if vol > max_vol:
+                print(f"[AudioRouter] Volume capped: {device_id} "
+                      f"{vol:.2f} → {max_vol:.2f} (max lock)")
             vol = min(vol, max_vol)
         with self._lock:
             self._volumes[device_id] = vol
@@ -519,6 +532,91 @@ class AudioRouter:
     def energy_level(self):
         """Current audio energy level (0.0-1.0), updated by capture thread."""
         return self._energy_level
+
+    @property
+    def spectrum_bands(self):
+        """Current 8-band FFT spectrum (0.0-1.0 per band)."""
+        return list(self._spectrum_bands)
+
+    @staticmethod
+    def compute_fft_bands(samples, sample_rate):
+        """Compute 8 log-spaced frequency bands from audio samples.
+
+        Bands: sub-bass(20-60Hz), bass(60-250Hz), low-mid(250-500Hz),
+               mid(500-2kHz), upper-mid(2-4kHz), presence(4-6kHz),
+               brilliance(6-12kHz), air(12-20kHz)
+        """
+        n = len(samples)
+        if n == 0 or np.max(np.abs(samples)) < 1e-6:
+            return [0.0] * 8
+
+        # Hann window to reduce spectral leakage
+        window = np.hanning(n)
+        windowed = samples * window
+
+        # Real FFT
+        fft_mag = np.abs(np.fft.rfft(windowed)) / n
+        freqs = np.fft.rfftfreq(n, 1.0 / sample_rate)
+
+        # Band edges in Hz (log-spaced to match human hearing)
+        edges = [20, 60, 250, 500, 2000, 4000, 6000, 12000, 20000]
+        bands = []
+        for i in range(8):
+            mask = (freqs >= edges[i]) & (freqs < edges[i + 1])
+            if np.any(mask):
+                bands.append(float(np.mean(fft_mag[mask])))
+            else:
+                bands.append(0.0)
+
+        # Normalize: scale so typical music fills 0-1 range
+        max_val = max(bands) if max(bands) > 0 else 1.0
+        bands = [min(1.0, b / max_val) for b in bands]
+        return bands
+
+    @property
+    def beat_detected(self):
+        return self._beat_detected
+
+    @property
+    def beat_bpm(self):
+        return self._beat_bpm
+
+    @property
+    def beat_phase(self):
+        return self._beat_phase
+
+    def _check_beat(self, energy):
+        """Check if current energy frame is a beat onset."""
+        self._beat_energy_history.append(energy)
+
+        if self._beat_cooldown > 0:
+            self._beat_cooldown -= 1
+            return False
+
+        if len(self._beat_energy_history) < 10:
+            return False
+
+        avg = sum(self._beat_energy_history) / len(self._beat_energy_history)
+        threshold = avg * 1.5 + 0.05  # 1.5x average + floor
+
+        if energy > threshold:
+            self._beat_cooldown = 4  # ~250ms cooldown at 16Hz
+            now = time.monotonic()
+
+            # Track beat timestamps for BPM estimation
+            self._beat_timestamps.append(now)
+            if len(self._beat_timestamps) >= 4:
+                intervals = [self._beat_timestamps[i] - self._beat_timestamps[i - 1]
+                             for i in range(1, len(self._beat_timestamps))]
+                # Median filter for stability
+                intervals.sort()
+                median_interval = intervals[len(intervals) // 2]
+                if median_interval > 0.2:  # cap at 300 BPM
+                    self._beat_bpm = round(60.0 / median_interval, 1)
+
+            self._beat_last_time = now
+            return True
+        return False
 
     @staticmethod
     def _compute_biquad_low_shelf(freq, sample_rate, gain_db):
@@ -723,13 +821,26 @@ class AudioRouter:
                     audio = (audio * boost).clip(-32768, 32767).astype(self.NUMPY_DTYPE)
                     data = audio.tobytes()
 
-                # Compute RMS energy for Auto-DJ (exponential moving average)
+                # Compute RMS energy for visualizer effects (exponential moving average)
                 samples = np.frombuffer(data, dtype=self.NUMPY_DTYPE)
                 rms = float(np.sqrt(np.mean(samples * samples)))
                 # Normalize: float32 audio peaks at ~1.0, clamp for safety
                 rms = min(rms, 1.0)
                 # EMA smoothing (alpha=0.3 balances responsiveness vs stability)
                 self._energy_level = 0.3 * rms + 0.7 * self._energy_level
+
+                # FFT spectrum (every chunk for high-FPS visualizer)
+                self._spectrum_bands = self.compute_fft_bands(samples, self._sample_rate)
+
+                # Beat detection (every chunk)
+                self._beat_detected = self._check_beat(rms)
+                # Update phase sawtooth
+                if self._beat_bpm > 0:
+                    beat_period = 60.0 / self._beat_bpm
+                    elapsed = time.monotonic() - self._beat_last_time
+                    self._beat_phase = (elapsed / beat_period) % 1.0
+                else:
+                    self._beat_phase = 0.0
 
                 # Distribute to all output queues
                 for q in queues:
@@ -761,33 +872,38 @@ class AudioRouter:
             out_rate = self._sample_rate
             needs_resample = False
 
-            try:
-                stream = self._pa.open(
-                    format=self.FORMAT,
-                    channels=out_channels,
-                    rate=out_rate,
-                    output=True,
-                    output_device_index=pa_device_index,
-                    frames_per_buffer=self.CHUNK,
-                )
-            except Exception:
-                # Device may not support capture sample rate — try native rate
-                native_rate = int(pa_info.get("defaultSampleRate", 44100))
-                if native_rate != out_rate:
-                    print(f"[AudioRouter] Retrying output {pa_device_index} "
-                          f"at native {native_rate}Hz (capture is {out_rate}Hz)")
-                    out_rate = native_rate
-                    needs_resample = True
-                    stream = self._pa.open(
-                        format=self.FORMAT,
-                        channels=out_channels,
-                        rate=out_rate,
-                        output=True,
+            _MAX_REOPEN = 5           # max stream recovery attempts
+            _REOPEN_BASE_DELAY = 0.5  # seconds (doubles each retry)
+            _ERR_THRESHOLD = 3        # consecutive errors before recovery
+
+            def _open_stream():
+                """Open a PortAudio output stream (tries native rate on failure)."""
+                nonlocal out_rate, needs_resample
+                try:
+                    s = self._pa.open(
+                        format=self.FORMAT, channels=out_channels,
+                        rate=out_rate, output=True,
                         output_device_index=pa_device_index,
                         frames_per_buffer=self.CHUNK,
                     )
-                else:
+                    return s
+                except Exception:
+                    native_rate = int(pa_info.get("defaultSampleRate", 44100))
+                    if native_rate != self._sample_rate:
+                        print(f"[AudioRouter] Retrying output {pa_device_index} "
+                              f"at native {native_rate}Hz (capture is "
+                              f"{self._sample_rate}Hz)")
+                        out_rate = native_rate
+                        needs_resample = True
+                        return self._pa.open(
+                            format=self.FORMAT, channels=out_channels,
+                            rate=out_rate, output=True,
+                            output_device_index=pa_device_index,
+                            frames_per_buffer=self.CHUNK,
+                        )
                     raise
+
+            stream = _open_stream()
 
             self._output_streams[device_id] = stream
         except Exception as exc:
@@ -801,6 +917,8 @@ class AudioRouter:
         q = self._audio_queues.get(device_id)
         if not q:
             return
+
+        consecutive_errors = 0
 
         try:
             while self._running:
@@ -827,8 +945,9 @@ class AudioRouter:
                     # Muted — write silence to keep stream alive
                     try:
                         stream.write(b'\x00' * len(data))
+                        consecutive_errors = 0
                     except Exception:
-                        pass
+                        consecutive_errors += 1
                     continue
 
                 # Convert to numpy, apply volume, clip
@@ -912,11 +1031,50 @@ class AudioRouter:
                 _t0 = time.perf_counter()
                 try:
                     stream.write(audio.tobytes())
+                    consecutive_errors = 0
                 except Exception as exc:
-                    if self._running:
-                        print(f"[AudioRouter] Output write error: {exc}")
-                    time.sleep(0.01)
+                    consecutive_errors += 1
+                    if consecutive_errors == 1:
+                        print(f"[AudioRouter] Output write error for "
+                              f"'{dev_name}': {exc}")
+
+                    # After several consecutive failures, try to reopen stream
+                    if consecutive_errors >= _ERR_THRESHOLD:
+                        print(f"[AudioRouter] Stream dead for '{dev_name}' "
+                              f"({consecutive_errors} errors), recovering...")
+                        try:
+                            stream.stop_stream()
+                            stream.close()
+                        except Exception:
+                            pass
+
+                        recovered = False
+                        for attempt in range(1, _MAX_REOPEN + 1):
+                            if not self._running:
+                                break
+                            delay = _REOPEN_BASE_DELAY * (2 ** (attempt - 1))
+                            time.sleep(delay)
+                            try:
+                                stream = _open_stream()
+                                self._output_streams[device_id] = stream
+                                consecutive_errors = 0
+                                recovered = True
+                                print(f"[AudioRouter] Stream recovered for "
+                                      f"'{dev_name}' (attempt {attempt})")
+                                break
+                            except Exception as re_exc:
+                                print(f"[AudioRouter] Reopen attempt "
+                                      f"{attempt}/{_MAX_REOPEN} failed for "
+                                      f"'{dev_name}': {re_exc}")
+
+                        if not recovered:
+                            print(f"[AudioRouter] Giving up on '{dev_name}' "
+                                  f"after {_MAX_REOPEN} reopen attempts")
+                            break  # exit worker loop
+                    else:
+                        time.sleep(0.01)
                     continue
+
                 _t1 = time.perf_counter()
                 with self._lock:
                     self._latency[device_id] = round((_t1 - _t0) * 1000, 1)
@@ -958,6 +1116,24 @@ _cue_device_id = None            # device used as cue/headphone output
 _cue_members = set()             # device_ids in cue (preview) mode
 _min_volumes = {}                # device_id -> float (0.0-1.0) minimum volume floor
 _max_volumes = {}                # device_id -> float (0.0-1.0) max volume cap
+_viz_mode = 0  # 0=energy only, 1=spectrum, 2=spectrum+beat
+
+# Fade system
+_FADES_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(sys.argv[0] if not getattr(sys, 'frozen', False)
+                                     else sys.executable)),
+    'fades.json')
+_fade_store = FadeStore(_FADES_FILE)
+_fade_playback_lock = threading.Lock()
+_fade_playback_state = {
+    'active': False,
+    'paused': False,
+    'fade_id': None,
+    'start_time': None,
+    'pause_time': None,
+}
+_fade_playback_stop = threading.Event()
+_fade_playback_thread_ref = None  # reference to current playback thread
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -1187,6 +1363,16 @@ def _audio_level_monitor():
 def index():
     """Serve the frontend single-page application."""
     resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
+@app.route("/perform")
+def perform():
+    """Serve the perform page for live sets."""
+    resp = make_response(render_template("perform.html"))
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
@@ -1662,6 +1848,13 @@ def ws_set_cue_device(data):
                                   "cue_device": _cue_device_id})
 
 
+@socketio.on("set_visualizer_mode")
+def ws_set_visualizer_mode(data):
+    """Set visualizer analysis tier (0=energy, 1=spectrum, 2=spectrum+beat)."""
+    global _viz_mode
+    mode = data.get("mode", 0)
+    _viz_mode = max(0, min(2, int(mode)))
+
 
 def _get_zone_snapshot():
     """Return zone positions under lock."""
@@ -1712,6 +1905,215 @@ def api_set_zone_positions():
     return jsonify({'success': True})
 
 
+# ---------------------------------------------------------------------------
+# Fade CRUD REST endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.route('/api/fades', methods=['GET'])
+def api_list_fades():
+    """List all saved fades with their slot numbers."""
+    return jsonify(_fade_store.list_fades())
+
+@app.route('/api/fades', methods=['POST'])
+def api_save_fade():
+    """Save a new fade to the next available slot."""
+    data = request.get_json(silent=True) or {}
+    name = data.get('name')
+    if not isinstance(name, str) or not name.strip():
+        return jsonify({'error': 'name must be a non-empty string'}), 400
+    if not isinstance(data.get('keyframes'), list):
+        return jsonify({'error': 'keyframes must be a list'}), 400
+    duration_ms = data.get('duration_ms')
+    if not isinstance(duration_ms, (int, float)) or duration_ms <= 0:
+        return jsonify({'error': 'duration_ms must be a positive number'}), 400
+    slot = _fade_store.save_fade(data)
+    if slot is None:
+        return jsonify({'error': 'All 16 slots full'}), 400
+    return jsonify({'slot': slot, 'success': True})
+
+@app.route('/api/fades/<int:fade_id>', methods=['GET'])
+def api_get_fade(fade_id):
+    """Return full fade data for a given slot."""
+    fade = _fade_store.get_fade(fade_id)
+    if fade is None:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(fade)
+
+@app.route('/api/fades/<int:fade_id>', methods=['PUT'])
+def api_update_fade(fade_id):
+    """Update fields of an existing fade slot."""
+    data = request.get_json(silent=True) or {}
+    allowed = {'name', 'keyframes', 'duration_ms'}
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    if not filtered:
+        return jsonify({'error': 'No valid update fields provided'}), 400
+    if not _fade_store.update_fade(fade_id, filtered):
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'success': True})
+
+@app.route('/api/fades/<int:fade_id>', methods=['DELETE'])
+def api_delete_fade(fade_id):
+    """Delete a fade from the given slot."""
+    if not _fade_store.delete_fade(fade_id):
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'success': True})
+
+
+# ---------------------------------------------------------------------------
+# Fade playback engine
+# ---------------------------------------------------------------------------
+
+
+def _get_device_positions():
+    """Get current device positions for volume computation."""
+    devices = get_bluetooth_speakers()
+    n = len(devices)
+    positions = []
+    for i, dev in enumerate(devices):
+        with _state_lock:
+            zp = _zone_positions.get(dev['id'])
+        if zp:
+            positions.append({'id': dev['id'], 'x': zp['x'], 'y': zp['y']})
+        else:
+            angle = (i * 2 * math.pi) / n - math.pi / 2
+            x = 250 + 180 * math.cos(angle)
+            y = 250 + 180 * math.sin(angle)
+            positions.append({'id': dev['id'], 'x': x, 'y': y})
+    return positions
+
+
+def _fade_playback_thread(fade_id, keyframes, duration_ms):
+    """Background thread: plays a fade by interpolating keyframes."""
+    with _fade_playback_lock:
+        _fade_playback_stop.clear()
+        _fade_playback_state['active'] = True
+        _fade_playback_state['paused'] = False
+        _fade_playback_state['fade_id'] = fade_id
+        _fade_playback_state['start_time'] = time.time()
+        _fade_playback_state['pause_time'] = None
+
+    device_positions = _get_device_positions()
+    curve_type = 'inverse-square'
+
+    while not _fade_playback_stop.is_set() and not _shutdown_event.is_set():
+        with _fade_playback_lock:
+            if _fade_playback_state['paused']:
+                is_paused = True
+            else:
+                is_paused = False
+                elapsed = (time.time() - _fade_playback_state['start_time']) * 1000
+        if is_paused:
+            _fade_playback_stop.wait(timeout=0.033)
+            continue
+
+        if elapsed >= duration_ms:
+            break
+
+        x, y = interpolate_position(keyframes, elapsed)
+
+        with _state_lock:
+            min_vols = dict(_min_volumes)
+        volumes = compute_volumes_from_position(x, y, device_positions, curve_type, min_vols)
+        for did, vol in volumes.items():
+            audio_router.set_volume(did, vol)
+            with _state_lock:
+                _last_known_volumes[did] = vol
+
+        progress = elapsed / duration_ms if duration_ms > 0 else 1.0
+        socketio.emit('fade_playback', {
+            'fade_id': fade_id,
+            'time_ms': round(elapsed),
+            'x': round(x, 1),
+            'y': round(y, 1),
+            'progress': round(progress, 3),
+            'state': 'playing',
+        })
+
+        _fade_playback_stop.wait(timeout=0.033)
+
+    with _fade_playback_lock:
+        _fade_playback_state['active'] = False
+        _fade_playback_state['fade_id'] = None
+    socketio.emit('fade_ended', {'fade_id': fade_id})
+
+
+@socketio.on('trigger_fade')
+def ws_trigger_fade(data):
+    fade_id = data.get('fade_id')
+    if not fade_id:
+        return
+    fade = _fade_store.get_fade(int(fade_id))
+    if not fade:
+        emit('fade_ended', {'fade_id': fade_id, 'error': 'not_found'})
+        return
+    global _fade_playback_thread_ref
+    _fade_playback_stop.set()
+    if _fade_playback_thread_ref is not None:
+        _fade_playback_thread_ref.join(timeout=0.2)
+    keyframes = fade.get('keyframes', [])
+    duration_ms = fade.get('duration_ms', 0)
+    if not keyframes or duration_ms <= 0:
+        emit('fade_ended', {'fade_id': fade_id, 'error': 'empty'})
+        return
+    t = threading.Thread(
+        target=_fade_playback_thread,
+        args=(int(fade_id), keyframes, duration_ms),
+        daemon=True,
+    )
+    _fade_playback_thread_ref = t
+    t.start()
+
+
+@socketio.on('stop_fade')
+def ws_stop_fade(data=None):
+    _fade_playback_stop.set()
+    with _fade_playback_lock:
+        _fade_playback_state['active'] = False
+
+
+@socketio.on('pause_fade')
+def ws_pause_fade(data=None):
+    with _fade_playback_lock:
+        if _fade_playback_state['active']:
+            if _fade_playback_state['paused']:
+                pause_duration = time.time() - _fade_playback_state['pause_time']
+                _fade_playback_state['start_time'] += pause_duration
+                _fade_playback_state['paused'] = False
+            else:
+                _fade_playback_state['paused'] = True
+                _fade_playback_state['pause_time'] = time.time()
+
+
+@socketio.on('override_fade')
+def ws_override_fade(data=None):
+    ws_stop_fade()
+
+
+@socketio.on('set_position')
+def ws_set_position(data):
+    """Set control point position and update speaker volumes (used by perform page override)."""
+    x = data.get('x', 250)
+    y = data.get('y', 250)
+    device_positions = _get_device_positions()
+    with _state_lock:
+        curve_type = 'inverse-square'
+        min_vols = dict(_min_volumes)
+    volumes = compute_volumes_from_position(x, y, device_positions, curve_type, min_vols)
+    for did, vol in volumes.items():
+        audio_router.set_volume(did, vol)
+        with _state_lock:
+            _last_known_volumes[did] = vol
+    # Broadcast position to all clients
+    socketio.emit('fade_playback', {
+        'fade_id': None,
+        'time_ms': 0,
+        'x': round(x, 1),
+        'y': round(y, 1),
+        'progress': 0,
+        'state': 'override',
+    })
+
 
 def _spotify_poller():
     """Background thread: polls Spotify every 3s, emits via WebSocket."""
@@ -1750,15 +2152,24 @@ def _spotify_poller():
 
 
 def _energy_emitter():
-    """Background thread: emits audio energy at ~10Hz for Auto-DJ."""
+    """Background thread: emits audio energy and spectrum data."""
     while not _shutdown_event.is_set():
-        _shutdown_event.wait(timeout=0.1)  # ~10Hz
+        _shutdown_event.wait(timeout=0.033)  # ~30Hz
         if _shutdown_event.is_set():
             break
         if audio_router.is_running:
             socketio.emit('audio_energy', {
                 'energy': round(audio_router.energy_level, 3)
             })
+            if _viz_mode >= 1:
+                payload = {
+                    'bands': [round(b, 3) for b in audio_router.spectrum_bands]
+                }
+                if _viz_mode >= 2:
+                    payload['beat'] = audio_router.beat_detected
+                    payload['bpm'] = round(audio_router.beat_bpm, 1)
+                    payload['phase'] = round(audio_router.beat_phase, 3)
+                socketio.emit('audio_spectrum', payload)
 
 
 # ---------------------------------------------------------------------------

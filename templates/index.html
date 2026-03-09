@@ -145,33 +145,6 @@
         .eq-slider-row input[type=range] { flex: 1; accent-color: #00d4ff; }
         .eq-slider-row span { min-width: 30px; text-align: right; font-size: 0.8rem; color: #c0c0d8; }
 
-        /* ── Preset Bar ──────────────────────────────────────── */
-        .preset-bar {
-            margin-top: 0.8rem;
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            font-size: 0.85rem;
-            color: #8888aa;
-        }
-        .preset-slots { display: flex; gap: 0.3rem; }
-        .preset-slot {
-            width: 24px; height: 24px; border-radius: 50%;
-            border: 1px solid rgba(0,212,255,0.3);
-            background: transparent;
-            color: #8888aa;
-            font-size: 0.7rem;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; transition: all 0.2s;
-        }
-        .preset-slot.filled { background: rgba(0,212,255,0.15); color: #00d4ff; border-color: #00d4ff; }
-        .preset-slot.active { background: rgba(0,212,255,0.3); box-shadow: 0 0 6px rgba(0,212,255,0.4); }
-        .preset-toast {
-            font-size: 0.8rem; color: #00d4ff; opacity: 0;
-            transition: opacity 0.3s;
-        }
-        .preset-toast.show { opacity: 1; }
-
         /* ── Spotify Widget (Now Playing — main UI element) ── */
         .spotify-widget {
             margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
@@ -249,6 +222,151 @@
             pointer-events: none; white-space: nowrap;
         }
 
+        /* ── Recording Transport Bar ─────────────────────────── */
+        .transport-bar {
+            margin-top: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .transport-btn {
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .transport-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .record-btn {
+            background: rgba(255, 80, 80, 0.15);
+            color: #ff5050;
+            border: 1px solid rgba(255, 80, 80, 0.4);
+        }
+        .record-btn.recording {
+            background: rgba(255, 80, 80, 0.3);
+            animation: rec-pulse 1s infinite;
+        }
+        @keyframes rec-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.4); }
+            50% { box-shadow: 0 0 8px 2px rgba(255, 80, 80, 0.6); }
+        }
+        .rec-timer {
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #c0c0d8;
+            min-width: 40px;
+        }
+        .rec-indicator {
+            color: #ff5050;
+            font-weight: bold;
+            font-size: 0.8rem;
+            animation: rec-blink 1s infinite;
+        }
+        @keyframes rec-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ── Fade Sidebar ───────────────────────────────────── */
+        .fade-sidebar {
+            position: fixed;
+            right: 1rem;
+            top: 1rem;
+            width: 200px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 10px;
+            padding: 1rem;
+            max-height: calc(100vh - 2rem);
+            overflow-y: auto;
+            z-index: 10;
+        }
+        .fade-slot-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+        .fade-slot-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.5rem;
+            border-radius: 6px;
+            background: rgba(0, 212, 255, 0.04);
+            border: 1px solid rgba(0, 212, 255, 0.1);
+            font-size: 0.75rem;
+            color: #c0c0d8;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .fade-slot-item:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+        .fade-slot-item.empty {
+            color: #555;
+            cursor: default;
+        }
+        .fade-slot-item .slot-num {
+            color: #00d4ff;
+            font-weight: bold;
+            min-width: 20px;
+        }
+        .fade-slot-item .slot-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fade-slot-item .slot-duration {
+            color: #888;
+            font-size: 0.7rem;
+        }
+        .fade-slot-item .slot-delete {
+            background: none;
+            border: none;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0 2px;
+            opacity: 0.5;
+        }
+        .fade-slot-item .slot-delete:hover {
+            opacity: 1;
+        }
+
+        /* ── Timeline Keyframe Editor ──────────────────────────── */
+        .timeline-panel {
+            margin-top: 0.8rem;
+            background: rgba(15, 15, 35, 0.95);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 10px;
+            padding: 0.8rem;
+            width: 100%;
+            max-width: 820px;
+        }
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.4rem;
+        }
+        #timeline-canvas {
+            width: 100%;
+            height: 200px;
+            border: 1px solid rgba(0, 212, 255, 0.1);
+            border-radius: 6px;
+            background: #0a0a1a;
+            cursor: crosshair;
+        }
+        .timeline-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 0.4rem;
+        }
+
         /* ── Screen reader only ──────────────────────────────── */
         .sr-only {
             position: absolute; width: 1px; height: 1px;
@@ -266,6 +384,31 @@
                 aria-label="Bluetooth speaker crossfade mixer. Use arrow keys to move control point, Tab to focus speakers."></canvas>
     </div>
 
+    <div class="transport-bar" id="transport-bar">
+        <button id="btn-record" type="button" class="transport-btn record-btn">Record</button>
+        <button id="btn-stop-rec" type="button" class="transport-btn" disabled>Stop</button>
+        <button id="btn-preview" type="button" class="transport-btn" disabled>Play Preview</button>
+        <button id="btn-clear-rec" type="button" class="transport-btn" disabled>Clear</button>
+        <span id="rec-timer" class="rec-timer">0:00</span>
+        <span id="rec-indicator" class="rec-indicator" style="display:none;">REC</span>
+    </div>
+
+    <div id="timeline-panel" class="timeline-panel" style="display:none;">
+        <div class="timeline-header">
+            <span style="color:#00d4ff;font-size:0.85rem;font-weight:600;">Timeline Editor</span>
+            <button id="timeline-close" type="button" style="background:none;border:none;color:#888;cursor:pointer;font-size:1.1rem;">&times;</button>
+        </div>
+        <canvas id="timeline-canvas" width="800" height="200"></canvas>
+        <div class="timeline-controls">
+            <span id="timeline-time" style="font-family:monospace;font-size:0.8rem;color:#888;">0:00.0</span>
+            <button id="btn-timeline-add" type="button" class="dj-btn">Add Keyframe</button>
+            <button id="btn-timeline-delete" type="button" class="dj-btn">Delete Selected</button>
+            <label style="font-size:0.75rem;color:#888;">
+                Zoom: <input type="range" id="timeline-zoom" min="50" max="400" value="100" style="width:80px;height:14px;">
+            </label>
+        </div>
+    </div>
+
     <div class="status-bar">
         <span id="status-text">Scanning devices...</span>
         <select id="curve-select" title="Crossfade curve">
@@ -275,7 +418,6 @@
             <option value="equal-power">Equal Power</option>
         </select>
         <button id="btn-bounce" type="button" title="Auto-bounce between speakers">Bounce: Off</button>
-        <button id="btn-autodj" type="button" title="Auto-DJ: energy-reactive crossfading between speakers">Auto-DJ: Off</button>
         <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#888;" title="Stereo separation: 0% = mono, 100% = full L/R split">
             <label for="stereo-sep" style="white-space:nowrap;">3D:</label>
             <input type="range" id="stereo-sep" min="0" max="100" value="0" step="5" style="width:60px;height:14px;accent-color:#00d4ff;">
@@ -283,7 +425,8 @@
         </span>
         <button id="btn-zone" type="button" title="Toggle zone mapping mode">Zone: Ring</button>
         <button id="btn-dj" type="button" title="Cue &amp; latency panels">More</button>
-        <button id="btn-party" type="button" title="Party Mode: auto-DJ + full stereo separation">Party</button>
+        <button id="btn-viz" type="button" title="Visualizer settings">Viz</button>
+        <a href="/perform" id="btn-perform" style="background:rgba(30,215,96,0.12);color:#1ed760;border:1px solid rgba(30,215,96,0.3);padding:0.5rem 1.2rem;border-radius:6px;font-size:0.85rem;text-decoration:none;cursor:pointer;">Perform</a>
         <button id="btn-refresh" type="button">Refresh Devices</button>
     </div>
 
@@ -298,12 +441,6 @@
         <span id="bounce-radius-val" class="val">75%</span>
         <label>BPM:</label>
         <input type="number" id="bounce-bpm" min="40" max="300" value="120" step="1" style="width:50px;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;text-align:center;font-size:0.75rem;">
-    </div>
-
-    <div class="preset-bar">
-        <span class="preset-label">Presets:</span>
-        <div class="preset-slots" id="preset-slots"></div>
-        <span id="preset-toast" class="preset-toast"></span>
     </div>
 
     <div id="router-status" class="router-status">
@@ -346,6 +483,42 @@
             <label>Max Vol</label>
             <input type="range" id="eq-maxvol" min="0" max="100" value="0" step="5">
             <span id="eq-maxvol-val">Off</span>
+        </div>
+    </div>
+
+    <div id="viz-panel" class="eq-panel" style="display:none;">
+        <h3 style="margin:0 0 8px;color:#00d4ff;font-size:0.9rem;">
+            Visualizer
+            <span id="viz-close" style="float:right;cursor:pointer;color:#888;">&times;</span>
+        </h3>
+        <div class="eq-slider-row">
+            <label>Audio</label>
+            <select id="viz-tier" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
+                <option value="0">Energy</option>
+                <option value="1">Spectrum</option>
+                <option value="2">Spectrum + Beat</option>
+            </select>
+        </div>
+        <div class="eq-slider-row">
+            <label>Intensity</label>
+            <input type="range" id="viz-intensity" min="0" max="100" value="60" step="5">
+            <span id="viz-intensity-val">60%</span>
+        </div>
+        <div style="margin:6px 0;font-size:0.75rem;color:#888;">Mixer Effects</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-ring" checked> Spectrum Ring</label>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-orbit" checked> Waveform Orbit</label>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-flash" checked> Beat Flash</label>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="viz-eff-drift" checked> Particle Drift</label>
+        </div>
+        <div class="eq-slider-row">
+            <label>Theme</label>
+            <select id="viz-theme" style="flex:1;background:#1a1a2e;color:#e0e0e0;border:1px solid rgba(0,212,255,0.3);border-radius:4px;padding:2px;">
+                <option value="0">Cyan</option>
+                <option value="1">Sunset</option>
+                <option value="2">Neon</option>
+                <option value="3">Monochrome</option>
+            </select>
         </div>
     </div>
 
@@ -395,6 +568,13 @@
             <button id="latency-close" type="button">&times;</button>
         </div>
         <div id="latency-list" style="font-family:monospace;font-size:0.8rem;"></div>
+    </div>
+
+    <div id="fade-sidebar" class="fade-sidebar">
+        <h3 style="color:#00d4ff;font-size:0.9rem;margin:0 0 0.6rem;">Fade Slots</h3>
+        <div id="fade-slot-list" class="fade-slot-list"></div>
+        <button id="btn-save-fade" type="button" class="transport-btn" disabled
+                style="width:100%;margin-top:0.5rem;">Save Recording</button>
     </div>
 
     <div id="aria-live" aria-live="polite" class="sr-only"></div>
@@ -449,20 +629,13 @@
         minVolumes:     JSON.parse(localStorage.getItem('mixer-minvols') || '{}'),  // device_id -> 0-1
         eqTarget:       null,    // device_id of currently open EQ panel
         restoredDevice: null,    // {id, until} for restore flash animation
-        presets:        JSON.parse(localStorage.getItem('mixer-presets') || 'null') || new Array(9).fill(null),
-        activePreset:   -1,
-        presetAnimating: false,
-        presetAnimTarget: null,
         autoBounce:     'off',   // 'off' | 'smooth' | 'beat'
         bounceSpeed:    parseFloat(localStorage.getItem('mixer-bounce-speed') || '1.0'),
         bounceRadius:   parseFloat(localStorage.getItem('mixer-bounce-radius') || '0.75'),
         bouncePattern:  localStorage.getItem('mixer-bounce-pattern') || 'circle',
         bounceBPM:      parseInt(localStorage.getItem('mixer-bounce-bpm') || '120'),
-        // Auto-DJ: energy-reactive crossfading
-        autoDJ:         false,
-        djPrimarySpeaker: 0,     // index of current "home" speaker
-        djEnergy:       0,       // smoothed energy level from backend (0-1)
-        djLastTrackId:  '',      // detect track changes for rotation
+        // Audio energy for visualizer effects
+        vizEnergy:      0,       // smoothed energy level from backend (0-1)
         // 3D spatial audio
         panPositions:   JSON.parse(localStorage.getItem('mixer-pans') || '{}'),  // device_id -> pan (-1..+1)
         stereoSep:      parseFloat(localStorage.getItem('mixer-stereo-sep') || '0'),
@@ -473,9 +646,38 @@
         latencyData:    {},      // device_id -> ms
         cueMembers:     new Set(),
         cueDevice:      null,
-        currentTrackId: '',
+        // Visualizer
+        vizMode:        parseInt(localStorage.getItem('mixer-viz-mode') || '0'),
+        vizSpectrum:    new Float32Array(8),
+        vizBeat:        false,
+        vizBPM:         0,
+        vizPhase:       0,
+        vizEffects: {
+            spectrumRing: localStorage.getItem('mixer-viz-spectrumRing') !== 'false',
+            waveformOrbit: localStorage.getItem('mixer-viz-waveformOrbit') !== 'false',
+            beatFlash: localStorage.getItem('mixer-viz-beatFlash') !== 'false',
+            particleDrift: localStorage.getItem('mixer-viz-particleDrift') !== 'false',
+        },
+        vizIntensity:   parseFloat(localStorage.getItem('mixer-viz-intensity') || '0.6'),
+        vizThemeIdx:    parseInt(localStorage.getItem('mixer-viz-theme') || '0'),
+        vizBeatFlashAlpha: 0,
+        vizParticles:   [],
+        vizWaveformAngle: 0,
+        // Recording
+        recording: false,
+        recordingKeyframes: [],
+        recordingStartTime: 0,
+        recordedFade: null,  // {keyframes, duration_ms} after recording stops
+        previewing: false,
+        previewStartTime: 0,
     };
 
+    const VIZ_THEMES = [
+        { name: 'Cyan',       primary: '#00d4ff', secondary: '#0088aa', accent: '#ffffff', background: '#0a0a1a', beat: '#ffffff' },
+        { name: 'Sunset',     primary: '#ff6b35', secondary: '#f7c59f', accent: '#ffffc7', background: '#1a0a05', beat: '#ffdd57' },
+        { name: 'Neon',       primary: '#ff006e', secondary: '#39ff14', accent: '#bf00ff', background: '#0a001a', beat: '#39ff14' },
+        { name: 'Monochrome', primary: '#ffffff', secondary: '#888888', accent: '#cccccc', background: '#0a0a0a', beat: '#ffffff' },
+    ];
     /** Rebuild the deviceMap whenever the device list changes. */
     function rebuildDeviceMap() {
         state.deviceMap.clear();
@@ -619,24 +821,26 @@
             spotifyDurationMs = data.duration_ms;
             spotifyLastUpdate = Date.now();
             spotifyEls.playPause.innerHTML = spotifyPlaying ? '&#9646;&#9646;' : '&#9654;';
-            state.currentTrackId = data.track_id || '';
-            // Auto-DJ: rotate primary speaker on track change
-            if (state.autoDJ && data.track_id && data.track_id !== state.djLastTrackId) {
-                state.djLastTrackId = data.track_id;
-                const n = state.devices.length;
-                if (n > 1) {
-                    state.djPrimarySpeaker = (state.djPrimarySpeaker + 1) % n;
-                }
-            }
         } else {
             spotifyEls.widget.style.display = 'none';
         }
     });
 
-    // Audio energy for Auto-DJ
+    // Audio energy for visualizer effects
     socket.on("audio_energy", (data) => {
-        state.djEnergy = data.energy || 0;
-        if (state.djEnergy > 0.01) markDirty();
+        state.vizEnergy = data.energy || 0;
+        if (state.vizEnergy > 0.01) markDirty();
+    });
+
+    // Spectrum + beat data for visualizer
+    socket.on("audio_spectrum", (data) => {
+        if (data.bands) {
+            for (let i = 0; i < 8; i++) state.vizSpectrum[i] = data.bands[i] || 0;
+        }
+        if (data.beat !== undefined) state.vizBeat = data.beat;
+        if (data.bpm !== undefined) state.vizBPM = data.bpm;
+        if (data.phase !== undefined) state.vizPhase = data.phase;
+        markDirty();
     });
 
     // Progress bar interpolation + time display
@@ -941,6 +1145,229 @@
         return g;
     })();
 
+    // ── Visualizer mixer effects ─────────────────────────────────────
+    function drawSpectrumRing(intensity, theme) {
+        const spectrum = state.vizSpectrum;
+        const hasSpectrum = state.vizMode >= 1;
+
+        // Interpolate 8 bands to 64 bars
+        const barCount = 64;
+        const bars = new Float32Array(barCount);
+        if (hasSpectrum) {
+            for (let i = 0; i < barCount; i++) {
+                const bandFloat = (i / barCount) * 7;
+                const lo = Math.floor(bandFloat);
+                const hi = Math.min(lo + 1, 7);
+                const frac = bandFloat - lo;
+                bars[i] = spectrum[lo] * (1 - frac) + spectrum[hi] * frac;
+            }
+        } else {
+            // Fallback: uniform pulse with energy
+            const e = state.vizEnergy || 0;
+            bars.fill(e);
+        }
+
+        ctx.save();
+        ctx.translate(CENTER, CENTER);
+        const maxBarLen = 40 * intensity;
+
+        for (let i = 0; i < barCount; i++) {
+            const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+            const amp = bars[i];
+            const barLen = amp * maxBarLen;
+            if (barLen < 0.5) continue;
+
+            const innerR = RING_RADIUS - barLen - 4;
+            const outerR = RING_RADIUS - 4;
+            const x1 = Math.cos(angle) * innerR;
+            const y1 = Math.sin(angle) * innerR;
+            const x2 = Math.cos(angle) * outerR;
+            const y2 = Math.sin(angle) * outerR;
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = theme.primary;
+            ctx.globalAlpha = amp * 0.6 * intensity;
+            ctx.lineWidth = Math.max(1, (Math.PI * 2 * RING_RADIUS / barCount) * 0.6);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+    function drawWaveformOrbit(intensity, theme) {
+        const spectrum = state.vizSpectrum;
+        const energy = state.vizEnergy || 0;
+        const hasSpectrum = state.vizMode >= 1;
+        const baseRadius = RING_RADIUS * 0.45;
+        const points = 128;
+
+        // Slow rotation
+        state.vizWaveformAngle += 0.003;
+
+        ctx.save();
+        ctx.translate(CENTER, CENTER);
+        ctx.rotate(state.vizWaveformAngle);
+        ctx.globalCompositeOperation = 'lighter';
+
+        ctx.beginPath();
+        for (let i = 0; i <= points; i++) {
+            const angle = (i / points) * Math.PI * 2;
+            // Map point to spectrum band for radius offset
+            const bandIdx = Math.floor((i / points) * 7.99);
+            const amp = hasSpectrum ? spectrum[bandIdx] : energy;
+            const wobble = amp * 30 * intensity;
+            const r = baseRadius + wobble + Math.sin(angle * 4 + state.vizWaveformAngle * 3) * 5 * intensity;
+
+            const x = Math.cos(angle) * r;
+            const y = Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+
+        // Color: interpolate from primary (quiet) to secondary (loud)
+        const loudness = hasSpectrum ? (spectrum[0] + spectrum[1] + spectrum[2]) / 3 : energy;
+        const alpha = (0.2 + loudness * 0.5) * intensity;
+        ctx.strokeStyle = loudness > 0.5 ? theme.secondary : theme.primary;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+    function drawBeatFlash(intensity, theme) {
+        // Trigger flash on beat
+        if (state.vizBeat) {
+            state.vizBeatFlashAlpha = 0.7 * intensity;
+        }
+
+        if (state.vizBeatFlashAlpha < 0.01) return;
+
+        const progress = 1.0 - (state.vizBeatFlashAlpha / (0.7 * Math.max(0.01, intensity)));
+        const flashRadius = RING_RADIUS * (0.3 + progress * 0.7);
+
+        ctx.save();
+        const grad = ctx.createRadialGradient(
+            CENTER, CENTER, 0,
+            CENTER, CENTER, flashRadius
+        );
+        grad.addColorStop(0, theme.beat);
+        grad.addColorStop(0.5, theme.beat);
+        grad.addColorStop(1, 'transparent');
+
+        ctx.beginPath();
+        ctx.arc(CENTER, CENTER, flashRadius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.globalAlpha = state.vizBeatFlashAlpha;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+
+        // Decay
+        state.vizBeatFlashAlpha *= 0.85;
+        if (state.vizBeatFlashAlpha < 0.01) state.vizBeatFlashAlpha = 0;
+    }
+
+    function drawParticleDrift(intensity, theme) {
+        const energy = state.vizEnergy || 0;
+        const maxParticles = 100;
+        const particles = state.vizParticles;
+
+        // Spawn new particles
+        const spawnRate = Math.max(0, Math.floor(energy * 3 * intensity));
+        for (let s = 0; s < spawnRate && particles.length < maxParticles; s++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = (0.3 + Math.random() * 0.7) * (1 + energy);
+            particles.push({
+                x: CENTER,
+                y: CENTER,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1.0,
+                decay: 0.005 + Math.random() * 0.01,
+                size: 1 + Math.random() * 2,
+            });
+        }
+
+        // Beat burst
+        if (state.vizBeat && state.vizMode >= 2) {
+            const burstCount = Math.min(12, maxParticles - particles.length);
+            for (let b = 0; b < burstCount; b++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 1.5 + Math.random() * 2;
+                particles.push({
+                    x: CENTER,
+                    y: CENTER,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 1.0,
+                    decay: 0.008 + Math.random() * 0.012,
+                    size: 1.5 + Math.random() * 2.5,
+                });
+            }
+        }
+
+        // Clip to ring
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(CENTER, CENTER, RING_RADIUS - 2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Update and draw
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= p.decay;
+
+            // Remove dead or out-of-bounds particles
+            const dx = p.x - CENTER;
+            const dy = p.y - CENTER;
+            if (p.life <= 0 || (dx * dx + dy * dy) > RING_RADIUS * RING_RADIUS) {
+                particles.splice(i, 1);
+                continue;
+            }
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * intensity, 0, Math.PI * 2);
+            ctx.fillStyle = theme.primary;
+            ctx.globalAlpha = p.life * intensity * 0.6;
+            ctx.fill();
+        }
+
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+    }
+
+
+    function drawMixerEffects() {
+        const intensity = state.vizIntensity;
+        if (intensity < 0.01) return;
+        const theme = VIZ_THEMES[state.vizThemeIdx] || VIZ_THEMES[0];
+
+        // Layer 1: Spectrum Ring
+        if (state.vizEffects.spectrumRing) {
+            drawSpectrumRing(intensity, theme);
+        }
+        // Layer 2: Waveform Orbit
+        if (state.vizEffects.waveformOrbit) {
+            drawWaveformOrbit(intensity, theme);
+        }
+        // Layer 3: Beat Flash
+        if (state.vizEffects.beatFlash && state.vizMode >= 2) {
+            drawBeatFlash(intensity, theme);
+        }
+        // Layer 4: Particle Drift
+        if (state.vizEffects.particleDrift) {
+            drawParticleDrift(intensity, theme);
+        }
+    }
+
     /**
      * Main render function.  Clears the canvas and redraws everything:
      *   1. Background
@@ -969,7 +1396,7 @@
         ctx.fill();
 
         // Energy-reactive ring pulse
-        const energy = state.djEnergy || 0;
+        const energy = state.vizEnergy || 0;
         if (energy > 0.01) {
             const pulseRadius = RING_RADIUS + energy * 15;
             const pulseGlow = ctx.createRadialGradient(
@@ -985,6 +1412,9 @@
             ctx.fillStyle = pulseGlow;
             ctx.fill();
         }
+
+        // Visualizer background effects
+        drawMixerEffects();
 
         const n = state.devices.length;
 
@@ -1162,6 +1592,14 @@
                 ctx.fillText('CUE', pos.x, pos.y - DEVICE_RADIUS - 6);
             }
 
+            // Max volume lock indicator
+            if (device.max_volume && device.max_volume > 0) {
+                ctx.fillStyle = '#ff6b6b';
+                ctx.font = 'bold 8px sans-serif';
+                const cueOffset = state.cueMembers.has(id) ? 20 : 6;
+                ctx.fillText('MAX ' + Math.round(device.max_volume * 100) + '%', pos.x, pos.y - DEVICE_RADIUS - cueOffset);
+            }
+
             // Restore flash animation
             if (state.restoredDevice && state.restoredDevice.id === id && Date.now() < state.restoredDevice.until) {
                 const progress = (state.restoredDevice.until - Date.now()) / 1000;
@@ -1175,6 +1613,35 @@
 
         // 4. Control point (draggable dot)
         drawControlPoint();
+
+        // Recording path trail
+        if (state.recording && state.recordingKeyframes.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 80, 80, 0.3)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(state.recordingKeyframes[0].x, state.recordingKeyframes[0].y);
+            for (let i = 1; i < state.recordingKeyframes.length; i++) {
+                ctx.lineTo(state.recordingKeyframes[i].x, state.recordingKeyframes[i].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Recording indicator on mixer canvas
+        if (state.recording) {
+            ctx.save();
+            ctx.fillStyle = '#ff5050';
+            ctx.beginPath();
+            ctx.arc(20, 20, 6, 0, Math.PI * 2);
+            ctx.fill();
+            // Pulsing glow
+            ctx.globalAlpha = 0.3 + 0.3 * Math.sin(performance.now() / 300);
+            ctx.beginPath();
+            ctx.arc(20, 20, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
     }
 
     /**
@@ -1248,12 +1715,6 @@
         btnBounce.style.borderColor = state.autoBounce !== 'off' ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
         btnBounce.style.color = state.autoBounce !== 'off' ? '#1ed760' : '#00d4ff';
         bounceSettings.classList.toggle('active', state.autoBounce !== 'off');
-        if (state.autoBounce !== 'off' && state.autoDJ) {
-            state.autoDJ = false;
-            document.getElementById('btn-autodj').textContent = 'Auto-DJ: Off';
-            document.getElementById('btn-autodj').style.borderColor = 'rgba(0, 212, 255, 0.3)';
-            document.getElementById('btn-autodj').style.color = '#00d4ff';
-        }
     });
 
     bouncePatternBtn.addEventListener('click', () => {
@@ -1281,67 +1742,90 @@
         localStorage.setItem('mixer-bounce-bpm', state.bounceBPM);
     });
 
-    // ── Auto-DJ toggle ──────────────────────────────────────────────────
-    const btnAutoDJ = document.getElementById('btn-autodj');
-    btnAutoDJ.addEventListener('click', () => {
-        state.autoDJ = !state.autoDJ;
-        btnAutoDJ.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
-        btnAutoDJ.style.borderColor = state.autoDJ
-            ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
-        btnAutoDJ.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
-        // Disable auto-bounce when Auto-DJ is on (they'd conflict)
-        if (state.autoDJ && state.autoBounce !== 'off') {
-            state.autoBounce = 'off';
-            btnBounce.textContent = 'Bounce: Off';
-            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
-            btnBounce.style.color = '#00d4ff';
-            bounceSettings.classList.remove('active');
-        }
+    // ── Visualizer settings panel ────────────────────────────────────
+    const vizPanel = document.getElementById('viz-panel');
+    const vizBtn = document.getElementById('btn-viz');
+    vizBtn.addEventListener('click', () => {
+        const show = vizPanel.style.display === 'none';
+        vizPanel.style.display = show ? '' : 'none';
+    });
+    document.getElementById('viz-close').addEventListener('click', () => {
+        vizPanel.style.display = 'none';
     });
 
-    // ── Party Mode ──────────────────────────────────────────────────
-    const btnParty = document.getElementById('btn-party');
-    let partyMode = false;
+    // Audio tier select
+    const vizTierSel = document.getElementById('viz-tier');
+    vizTierSel.value = state.vizMode;
+    vizTierSel.addEventListener('change', () => {
+        state.vizMode = parseInt(vizTierSel.value);
+        localStorage.setItem('mixer-viz-mode', state.vizMode);
+        socket.emit('set_visualizer_mode', { mode: state.vizMode });
+    });
+    // Emit stored mode on connect
+    if (state.vizMode > 0) {
+        socket.emit('set_visualizer_mode', { mode: state.vizMode });
+    }
 
-    btnParty.addEventListener('click', () => {
-        partyMode = !partyMode;
-        btnParty.style.borderColor = partyMode ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
-        btnParty.style.color = partyMode ? '#1ed760' : '#00d4ff';
-        btnParty.textContent = partyMode ? 'Party: On' : 'Party';
+    // Intensity slider
+    const vizIntSlider = document.getElementById('viz-intensity');
+    const vizIntVal = document.getElementById('viz-intensity-val');
+    vizIntSlider.value = Math.round(state.vizIntensity * 100);
+    vizIntVal.textContent = vizIntSlider.value + '%';
+    vizIntSlider.addEventListener('input', () => {
+        state.vizIntensity = parseInt(vizIntSlider.value) / 100;
+        vizIntVal.textContent = vizIntSlider.value + '%';
+        localStorage.setItem('mixer-viz-intensity', state.vizIntensity);
+        markDirty();
+    });
 
-        if (partyMode) {
-            // Enable Auto-DJ
-            state.autoDJ = true;
-            btnAutoDJ.textContent = 'Auto-DJ: On';
-            btnAutoDJ.style.borderColor = 'rgba(30, 215, 96, 0.6)';
-            btnAutoDJ.style.color = '#1ed760';
-            // Disable bounce (conflicts with Auto-DJ)
-            state.autoBounce = 'off';
-            btnBounce.textContent = 'Bounce: Off';
-            btnBounce.style.borderColor = 'rgba(0, 212, 255, 0.3)';
-            btnBounce.style.color = '#00d4ff';
-            bounceSettings.classList.remove('active');
-            // Set stereo separation to 80%
-            state.stereoSep = 0.8;
-            document.getElementById('stereo-sep').value = 80;
-            document.getElementById('stereo-sep-val').textContent = '80%';
-            socket.emit('set_stereo_separation', { value: 0.8 });
-            localStorage.setItem('mixer-stereo-sep', '0.8');
-            showToast('Party Mode activated');
-        } else {
-            showToast('Party Mode deactivated');
-        }
+    // Effect toggles
+    const effMap = {
+        'viz-eff-ring': 'spectrumRing',
+        'viz-eff-orbit': 'waveformOrbit',
+        'viz-eff-flash': 'beatFlash',
+        'viz-eff-drift': 'particleDrift',
+    };
+    for (const [elId, key] of Object.entries(effMap)) {
+        const cb = document.getElementById(elId);
+        cb.checked = state.vizEffects[key];
+        cb.addEventListener('change', () => {
+            state.vizEffects[key] = cb.checked;
+            localStorage.setItem('mixer-viz-' + key, cb.checked);
+            markDirty();
+        });
+    }
+
+    // Theme select
+    const vizThemeSel = document.getElementById('viz-theme');
+    vizThemeSel.value = state.vizThemeIdx;
+    vizThemeSel.addEventListener('change', () => {
+        state.vizThemeIdx = parseInt(vizThemeSel.value);
+        localStorage.setItem('mixer-viz-theme', state.vizThemeIdx);
+        markDirty();
     });
 
     // ── Drag event handlers ────────────────────────────────────────────
 
     /**
      * Convert a mouse or touch event to canvas-relative coordinates.
+     * Uses a cached bounding rect during drag to avoid layout thrashing.
      */
+    let _cachedRect = null;
+    let _cachedScaleX = 1;
+    let _cachedScaleY = 1;
+
+    function _updateCanvasRect() {
+        _cachedRect = canvas.getBoundingClientRect();
+        _cachedScaleX = CANVAS_SIZE / _cachedRect.width;
+        _cachedScaleY = CANVAS_SIZE / _cachedRect.height;
+    }
+
+    // Refresh on resize/scroll (rect may shift)
+    window.addEventListener('resize', _updateCanvasRect);
+    window.addEventListener('scroll', _updateCanvasRect, true);
+    _updateCanvasRect();  // initial
+
     function canvasCoords(e) {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = CANVAS_SIZE / rect.width;
-        const scaleY = CANVAS_SIZE / rect.height;
         let clientX, clientY;
         if (e.touches && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
@@ -1351,8 +1835,8 @@
             clientY = e.clientY;
         }
         return {
-            x: (clientX - rect.left) * scaleX,
-            y: (clientY - rect.top)  * scaleY
+            x: (clientX - _cachedRect.left) * _cachedScaleX,
+            y: (clientY - _cachedRect.top)  * _cachedScaleY
         };
     }
 
@@ -1394,6 +1878,7 @@
         const dy = p.y - state.controlPoint.y;
         if (dx * dx + dy * dy < 400) {  // 20^2 = 400
             state.isDragging = true;
+            _updateCanvasRect();  // refresh cached rect at drag start
             e.preventDefault();
         }
     }
@@ -1421,6 +1906,7 @@
         const clamped = clampToRing(p.x, p.y);
         state.controlPoint.x = clamped.x;
         state.controlPoint.y = clamped.y;
+        markDirty();  // always redraw during drag — prevents stale frames
 
         // Throttle volume sends to ~33Hz (every 30ms) to avoid flooding the server
         const now = performance.now();
@@ -1591,84 +2077,6 @@
         }
     });
 
-    // ── Preset System ──────────────────────────────────────────────────
-
-    function renderPresetSlots() {
-        const container = document.getElementById('preset-slots');
-        container.innerHTML = '';
-        for (let i = 0; i < 9; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'preset-slot' + (state.presets[i] ? ' filled' : '') + (state.activePreset === i ? ' active' : '');
-            slot.textContent = String(i + 1);
-            slot.addEventListener('click', () => loadPreset(i));
-            container.appendChild(slot);
-        }
-    }
-
-    function showToast(msg) {
-        const toast = document.getElementById('preset-toast');
-        toast.textContent = msg;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 1500);
-    }
-
-    function savePreset(index) {
-        state.presets[index] = {
-            controlPoint: { x: state.controlPoint.x, y: state.controlPoint.y },
-            curveType: state.curveType,
-            minVolumes: Object.assign({}, state.minVolumes),
-            autoDJ: state.autoDJ,
-            panPositions: Object.assign({}, state.panPositions),
-            stereoSep: state.stereoSep,
-        };
-        localStorage.setItem('mixer-presets', JSON.stringify(state.presets));
-        renderPresetSlots();
-        showToast('Preset ' + (index + 1) + ' saved');
-    }
-
-    function loadPreset(index) {
-        const preset = state.presets[index];
-        if (!preset) return;
-        state.activePreset = index;
-        state.presetAnimTarget = { x: preset.controlPoint.x, y: preset.controlPoint.y };
-        state.presetAnimating = true;
-        state.curveType = preset.curveType || 'inverse-square';
-        const curveSelect = document.getElementById("curve-select");
-        if (curveSelect) curveSelect.value = state.curveType;
-        localStorage.setItem('mixer-curve', state.curveType);
-        if (preset.minVolumes) {
-            state.minVolumes = Object.assign({}, preset.minVolumes);
-            localStorage.setItem('mixer-minvols', JSON.stringify(state.minVolumes));
-        }
-        // Restore Auto-DJ state
-        state.autoDJ = !!preset.autoDJ;
-        const adjBtn = document.getElementById('btn-autodj');
-        adjBtn.textContent = state.autoDJ ? 'Auto-DJ: On' : 'Auto-DJ: Off';
-        adjBtn.style.borderColor = state.autoDJ ? 'rgba(30, 215, 96, 0.6)' : 'rgba(0, 212, 255, 0.3)';
-        adjBtn.style.color = state.autoDJ ? '#1ed760' : '#00d4ff';
-        // Restore 3D audio settings
-        if (preset.panPositions) {
-            state.panPositions = Object.assign({}, preset.panPositions);
-            localStorage.setItem('mixer-pans', JSON.stringify(state.panPositions));
-            for (const [did, pan] of Object.entries(state.panPositions)) {
-                socket.emit('set_pan', { device_id: did, pan });
-            }
-        }
-        if (preset.stereoSep !== undefined) {
-            state.stereoSep = preset.stereoSep;
-            localStorage.setItem('mixer-stereo-sep', String(state.stereoSep));
-            const ssSlider = document.getElementById('stereo-sep');
-            const ssVal = document.getElementById('stereo-sep-val');
-            ssSlider.value = Math.round(state.stereoSep * 100);
-            ssVal.textContent = ssSlider.value + '%';
-            socket.emit('set_stereo_separation', { value: state.stereoSep });
-        }
-        renderPresetSlots();
-        showToast('Preset ' + (index + 1) + ' loaded');
-    }
-
-    renderPresetSlots();
-
     // ── Keyboard & Accessibility ────────────────────────────────────────
 
     function announce(msg) {
@@ -1709,17 +2117,6 @@
                 closeEQPanel();
                 e.preventDefault();
                 break;
-        }
-
-        // Number keys for presets (only when canvas is focused)
-        const num = parseInt(e.key);
-        if (num >= 1 && num <= 9 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-            if (e.shiftKey) {
-                savePreset(num - 1);
-            } else {
-                loadPreset(num - 1);
-            }
-            e.preventDefault();
         }
     });
 
@@ -1834,6 +2231,645 @@
         }
     }
 
+    // ── Recording Transport ─────────────────────────────────────────
+    const btnRecord = document.getElementById('btn-record');
+    const btnStopRec = document.getElementById('btn-stop-rec');
+    const btnPreview = document.getElementById('btn-preview');
+    const btnClearRec = document.getElementById('btn-clear-rec');
+    const btnSaveFade = document.getElementById('btn-save-fade');
+    const recTimer = document.getElementById('rec-timer');
+    const recIndicator = document.getElementById('rec-indicator');
+
+    let _recSampleInterval = null;
+
+    btnRecord.addEventListener('click', () => {
+        if (_recSampleInterval) clearInterval(_recSampleInterval);
+        recTimer.textContent = '0:00';
+
+        state.recording = true;
+        state.recordingKeyframes = [];
+        state.recordingStartTime = performance.now();
+        state.recordedFade = null;
+        // Hide timeline while recording new fade
+        document.getElementById('timeline-panel').style.display = 'none';
+
+        btnRecord.disabled = true;
+        btnRecord.classList.add('recording');
+        btnStopRec.disabled = false;
+        btnPreview.disabled = true;
+        btnClearRec.disabled = true;
+        recIndicator.style.display = '';
+
+        // Sample at ~30fps
+        _recSampleInterval = setInterval(() => {
+            const elapsed = performance.now() - state.recordingStartTime;
+            state.recordingKeyframes.push({
+                time_ms: Math.round(elapsed),
+                x: Math.round(state.controlPoint.x * 10) / 10,
+                y: Math.round(state.controlPoint.y * 10) / 10,
+            });
+            // Update timer
+            const secs = Math.floor(elapsed / 1000);
+            const mins = Math.floor(secs / 60);
+            recTimer.textContent = mins + ':' + String(secs % 60).padStart(2, '0');
+        }, 33);
+    });
+
+    btnStopRec.addEventListener('click', () => {
+        if (!state.recording) return;
+        clearInterval(_recSampleInterval);
+        state.recording = false;
+
+        const duration = performance.now() - state.recordingStartTime;
+        state.recordedFade = {
+            keyframes: state.recordingKeyframes,
+            duration_ms: Math.round(duration),
+        };
+
+        btnRecord.disabled = false;
+        btnRecord.classList.remove('recording');
+        btnStopRec.disabled = true;
+        const hasKeyframes = state.recordingKeyframes.length > 0;
+        btnPreview.disabled = !hasKeyframes;
+        btnClearRec.disabled = !hasKeyframes;
+        btnSaveFade.disabled = !hasKeyframes;
+        recIndicator.style.display = 'none';
+
+        // Show timeline editor
+        tlPlayhead = 0;
+        tlSelectedKf = -1;
+        tlScrollOffset = 0;
+        document.getElementById('timeline-panel').style.display = '';
+        drawTimeline();
+    });
+
+    btnPreview.addEventListener('click', () => {
+        if (!state.recordedFade) return;
+        if (state.previewing) {
+            // Stop preview
+            state.previewing = false;
+            btnPreview.textContent = 'Play Preview';
+            btnRecord.disabled = false;
+            btnClearRec.disabled = false;
+            return;
+        }
+        state.previewing = true;
+        state.previewStartTime = performance.now();
+        btnPreview.textContent = 'Stop Preview';
+        btnRecord.disabled = true;
+        btnClearRec.disabled = true;
+    });
+
+    btnClearRec.addEventListener('click', () => {
+        state.recordedFade = null;
+        state.recordingKeyframes = [];
+        btnPreview.disabled = true;
+        btnClearRec.disabled = true;
+        btnSaveFade.disabled = true;
+        recTimer.textContent = '0:00';
+        // Hide timeline
+        document.getElementById('timeline-panel').style.display = 'none';
+    });
+
+    // ── Toast Notification ──────────────────────────────────────────────
+    function showToast(msg) {
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:rgba(0,212,255,0.15);color:#00d4ff;border:1px solid rgba(0,212,255,0.3);padding:0.5rem 1.2rem;border-radius:8px;font-size:0.85rem;z-index:100;transition:opacity 0.3s;';
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        setTimeout(() => { toast.remove(); }, 2500);
+    }
+
+    // ── Fade Slot Sidebar ───────────────────────────────────────────────
+    const fadeSlotList = document.getElementById('fade-slot-list');
+    let fadeSlots = {};  // slot -> {name, duration_ms}
+
+    async function fetchFadeSlots() {
+        try {
+            const resp = await fetch('/api/fades');
+            if (!resp.ok) throw new Error('Failed to fetch');
+            fadeSlots = await resp.json();
+            // Convert string keys to int
+            const converted = {};
+            for (const [k, v] of Object.entries(fadeSlots)) {
+                converted[parseInt(k)] = v;
+            }
+            fadeSlots = converted;
+        } catch (e) {
+            console.error('Failed to fetch fades:', e);
+        }
+        renderFadeSlots();
+    }
+
+    function renderFadeSlots() {
+        fadeSlotList.innerHTML = '';
+        for (let i = 1; i <= 16; i++) {
+            const slot = fadeSlots[i];
+            const item = document.createElement('div');
+            item.className = 'fade-slot-item' + (slot ? '' : ' empty');
+
+            const num = document.createElement('span');
+            num.className = 'slot-num';
+            num.textContent = i;
+
+            const name = document.createElement('span');
+            name.className = 'slot-name';
+
+            if (slot) {
+                name.textContent = slot.name || 'Fade ' + i;
+                const dur = document.createElement('span');
+                dur.className = 'slot-duration';
+                const secs = Math.round(slot.duration_ms / 1000);
+                dur.textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+
+                const del = document.createElement('button');
+                del.className = 'slot-delete';
+                del.textContent = '\u00d7';
+                del.title = 'Delete';
+                del.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (!confirm('Delete this fade?')) return;
+                    try {
+                        const resp = await fetch('/api/fades/' + i, { method: 'DELETE' });
+                        if (!resp.ok) throw new Error('Delete failed');
+                        fetchFadeSlots();
+                    } catch (err) {
+                        console.error('Failed to delete fade:', err);
+                    }
+                });
+
+                item.append(num, name, dur, del);
+
+                // Click to load preview
+                item.addEventListener('click', async () => {
+                    try {
+                        const resp = await fetch('/api/fades/' + i);
+                        if (!resp.ok) throw new Error('Not found');
+                        const fade = await resp.json();
+                        state.recordedFade = {
+                            keyframes: fade.keyframes,
+                            duration_ms: fade.duration_ms,
+                        };
+                        btnPreview.disabled = false;
+                        btnClearRec.disabled = false;
+                        const secs = Math.round(fade.duration_ms / 1000);
+                        recTimer.textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+                        showToast('Loaded: ' + (fade.name || 'Fade ' + i));
+                        // Show timeline editor for loaded fade
+                        tlPlayhead = 0;
+                        tlSelectedKf = -1;
+                        tlScrollOffset = 0;
+                        document.getElementById('timeline-panel').style.display = '';
+                        drawTimeline();
+                    } catch (e) {
+                        console.error('Failed to load fade:', e);
+                    }
+                });
+            } else {
+                name.textContent = '\u2014';
+                item.append(num, name);
+            }
+
+            fadeSlotList.appendChild(item);
+        }
+    }
+
+    btnSaveFade.addEventListener('click', async () => {
+        if (!state.recordedFade) return;
+        const name = prompt('Name this fade:', 'Fade');
+        if (name === null) return;
+        try {
+            const resp = await fetch('/api/fades', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name || 'Fade',
+                    duration_ms: state.recordedFade.duration_ms,
+                    keyframes: state.recordedFade.keyframes,
+                }),
+            });
+            if (!resp.ok) throw new Error('Save failed');
+            const data = await resp.json();
+            if (data.slot) {
+                showToast('Saved to slot ' + data.slot);
+                fetchFadeSlots();
+            } else {
+                showToast(data.error || 'Save failed');
+            }
+        } catch (e) {
+            console.error('Failed to save fade:', e);
+        }
+    });
+
+    // ── Timeline Keyframe Editor ─────────────────────────────────────────
+    const tlCanvas = document.getElementById('timeline-canvas');
+    const tlCtx = tlCanvas.getContext('2d');
+    const tlPanel = document.getElementById('timeline-panel');
+    const tlTimeDisplay = document.getElementById('timeline-time');
+    const tlZoomSlider = document.getElementById('timeline-zoom');
+
+    let tlPlayhead = 0;        // current time position in ms
+    let tlZoom = 100;          // pixels per second
+    let tlScrollOffset = 0;    // horizontal scroll offset in px
+    let tlSelectedKf = -1;     // index of selected keyframe (-1 = none)
+    let tlDragging = false;    // currently dragging a keyframe
+    let tlDragType = '';       // 'x' or 'y' lane
+
+    let _tlLastW = 0, _tlLastH = 0;
+    function tlResizeCanvas() {
+        const rect = tlCanvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.round(rect.width * dpr);
+        const h = Math.round(rect.height * dpr);
+        if (w !== _tlLastW || h !== _tlLastH) {
+            _tlLastW = w;
+            _tlLastH = h;
+            tlCanvas.width = w;
+            tlCanvas.height = h;
+        }
+        tlCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function tlTimeToX(time_ms) {
+        return (time_ms / 1000) * tlZoom - tlScrollOffset;
+    }
+
+    function tlXToTime(x) {
+        return ((x + tlScrollOffset) / tlZoom) * 1000;
+    }
+
+    function tlValueToY(value, lane, h) {
+        // Map position value (0-500) to canvas Y within a lane
+        // lane 'x': top half (0 to h/2), lane 'y': bottom half (h/2 to h)
+        const laneTop = lane === 'x' ? 0 : h / 2;
+        const laneH = h / 2;
+        const margin = 12;
+        const inner = laneH - margin * 2;
+        // 0 maps to bottom of lane, 500 maps to top of lane
+        return laneTop + margin + inner * (1 - value / 500);
+    }
+
+    function tlYToValue(y, lane, h) {
+        const laneTop = lane === 'x' ? 0 : h / 2;
+        const laneH = h / 2;
+        const margin = 12;
+        const inner = laneH - margin * 2;
+        const v = (1 - (y - laneTop - margin) / inner) * 500;
+        return Math.max(0, Math.min(500, v));
+    }
+
+    function tlGetLane(y, h) {
+        return y < h / 2 ? 'x' : 'y';
+    }
+
+    function timelineHitTest(mx, my) {
+        if (!state.recordedFade) return null;
+        const kfs = state.recordedFade.keyframes;
+        const rect = tlCanvas.getBoundingClientRect();
+        const h = rect.height;
+        const hitR = 8;
+        for (let i = 0; i < kfs.length; i++) {
+            const kf = kfs[i];
+            const kx = tlTimeToX(kf.time_ms);
+            // Check X lane diamond
+            const kyX = tlValueToY(kf.x, 'x', h);
+            if (Math.abs(mx - kx) < hitR && Math.abs(my - kyX) < hitR) {
+                return { index: i, lane: 'x' };
+            }
+            // Check Y lane diamond
+            const kyY = tlValueToY(kf.y, 'y', h);
+            if (Math.abs(mx - kx) < hitR && Math.abs(my - kyY) < hitR) {
+                return { index: i, lane: 'y' };
+            }
+        }
+        return null;
+    }
+
+    function formatTlTime(ms) {
+        const totalSec = ms / 1000;
+        const mins = Math.floor(totalSec / 60);
+        const secs = totalSec % 60;
+        return mins + ':' + secs.toFixed(1).padStart(4, '0');
+    }
+
+    function drawTimeline() {
+        if (tlPanel.style.display === 'none') return;
+        tlResizeCanvas();
+        const rect = tlCanvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+
+        tlCtx.clearRect(0, 0, w, h);
+
+        // Draw lane backgrounds
+        // Top half (X lane) - slightly different shade
+        tlCtx.fillStyle = 'rgba(0, 212, 255, 0.03)';
+        tlCtx.fillRect(0, 0, w, h / 2);
+        // Bottom half (Y lane)
+        tlCtx.fillStyle = 'rgba(255, 0, 212, 0.03)';
+        tlCtx.fillRect(0, h / 2, w, h / 2);
+
+        // Lane divider
+        tlCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        tlCtx.lineWidth = 1;
+        tlCtx.beginPath();
+        tlCtx.moveTo(0, h / 2);
+        tlCtx.lineTo(w, h / 2);
+        tlCtx.stroke();
+
+        // Lane labels
+        tlCtx.font = 'bold 11px sans-serif';
+        tlCtx.fillStyle = 'rgba(0, 212, 255, 0.5)';
+        tlCtx.fillText('X', 4, 14);
+        tlCtx.fillStyle = 'rgba(255, 0, 212, 0.5)';
+        tlCtx.fillText('Y', 4, h / 2 + 14);
+
+        // Time markers along bottom
+        const step = tlZoom >= 200 ? 0.5 : tlZoom >= 100 ? 1 : tlZoom >= 50 ? 2 : 5;
+        const startTime = Math.floor(tlXToTime(0) / 1000 / step) * step;
+        const endTime = tlXToTime(w) / 1000;
+        tlCtx.font = '10px monospace';
+        tlCtx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        tlCtx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        tlCtx.lineWidth = 1;
+        for (let t = Math.max(0, startTime); t <= endTime; t += step) {
+            const x = tlTimeToX(t * 1000);
+            if (x < 0 || x > w) continue;
+            // Vertical grid line
+            tlCtx.beginPath();
+            tlCtx.moveTo(x, 0);
+            tlCtx.lineTo(x, h);
+            tlCtx.stroke();
+            // Time label
+            const mins = Math.floor(t / 60);
+            const secs = Math.round(t % 60);
+            tlCtx.fillText(mins + ':' + String(secs).padStart(2, '0'), x + 2, h - 3);
+        }
+
+        // Draw keyframes and curves
+        if (state.recordedFade && state.recordedFade.keyframes.length > 0) {
+            const kfs = state.recordedFade.keyframes;
+
+            // Draw X curve (cyan)
+            tlCtx.strokeStyle = 'rgba(0, 212, 255, 0.6)';
+            tlCtx.lineWidth = 1.5;
+            tlCtx.beginPath();
+            for (let i = 0; i < kfs.length; i++) {
+                const x = tlTimeToX(kfs[i].time_ms);
+                const y = tlValueToY(kfs[i].x, 'x', h);
+                if (i === 0) tlCtx.moveTo(x, y);
+                else tlCtx.lineTo(x, y);
+            }
+            tlCtx.stroke();
+
+            // Draw Y curve (magenta)
+            tlCtx.strokeStyle = 'rgba(255, 0, 212, 0.6)';
+            tlCtx.lineWidth = 1.5;
+            tlCtx.beginPath();
+            for (let i = 0; i < kfs.length; i++) {
+                const x = tlTimeToX(kfs[i].time_ms);
+                const y = tlValueToY(kfs[i].y, 'y', h);
+                if (i === 0) tlCtx.moveTo(x, y);
+                else tlCtx.lineTo(x, y);
+            }
+            tlCtx.stroke();
+
+            // Draw keyframe diamonds
+            for (let i = 0; i < kfs.length; i++) {
+                const kf = kfs[i];
+                const kx = tlTimeToX(kf.time_ms);
+                if (kx < -10 || kx > w + 10) continue;
+
+                // X diamond
+                const yX = tlValueToY(kf.x, 'x', h);
+                drawDiamond(kx, yX, i === tlSelectedKf && tlDragType !== 'y' ? 6 : 4,
+                    i === tlSelectedKf && tlDragType !== 'y' ? '#00d4ff' : 'rgba(0, 212, 255, 0.8)');
+
+                // Y diamond
+                const yY = tlValueToY(kf.y, 'y', h);
+                drawDiamond(kx, yY, i === tlSelectedKf && tlDragType !== 'x' ? 6 : 4,
+                    i === tlSelectedKf && tlDragType !== 'x' ? '#ff00d4' : 'rgba(255, 0, 212, 0.8)');
+            }
+        }
+
+        // Draw playhead
+        const phX = tlTimeToX(tlPlayhead);
+        if (phX >= 0 && phX <= w) {
+            tlCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            tlCtx.lineWidth = 1.5;
+            tlCtx.setLineDash([4, 3]);
+            tlCtx.beginPath();
+            tlCtx.moveTo(phX, 0);
+            tlCtx.lineTo(phX, h);
+            tlCtx.stroke();
+            tlCtx.setLineDash([]);
+
+            // Playhead top marker
+            tlCtx.fillStyle = '#fff';
+            tlCtx.beginPath();
+            tlCtx.moveTo(phX - 5, 0);
+            tlCtx.lineTo(phX + 5, 0);
+            tlCtx.lineTo(phX, 6);
+            tlCtx.closePath();
+            tlCtx.fill();
+        }
+
+        // Update time display
+        tlTimeDisplay.textContent = formatTlTime(tlPlayhead);
+    }
+
+    function drawDiamond(cx, cy, size, color) {
+        tlCtx.fillStyle = color;
+        tlCtx.beginPath();
+        tlCtx.moveTo(cx, cy - size);
+        tlCtx.lineTo(cx + size, cy);
+        tlCtx.lineTo(cx, cy + size);
+        tlCtx.lineTo(cx - size, cy);
+        tlCtx.closePath();
+        tlCtx.fill();
+        // Outline
+        tlCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        tlCtx.lineWidth = 0.5;
+        tlCtx.stroke();
+    }
+
+    // Pointer events on timeline canvas
+    function onTimelinePointerDown(e) {
+        if (!state.recordedFade) return;
+        const rect = tlCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        const hit = timelineHitTest(mx, my);
+        if (hit) {
+            tlSelectedKf = hit.index;
+            tlDragType = hit.lane;
+            tlDragging = true;
+            tlCanvas.setPointerCapture(e.pointerId);
+        } else {
+            // Set playhead
+            tlSelectedKf = -1;
+            tlPlayhead = Math.max(0, tlXToTime(mx));
+            // Update mixer preview position
+            tlScrubToPlayhead();
+        }
+        drawTimeline();
+    }
+
+    function onTimelinePointerMove(e) {
+        if (!tlDragging || !state.recordedFade) return;
+        const rect = tlCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const h = rect.height;
+
+        const kf = state.recordedFade.keyframes[tlSelectedKf];
+        if (!kf) return;
+
+        // Update timing (horizontal)
+        const newTime = Math.max(0, tlXToTime(mx));
+        kf.time_ms = Math.round(newTime);
+
+        // Update position value (vertical)
+        if (tlDragType === 'x') {
+            kf.x = Math.round(tlYToValue(my, 'x', h) * 10) / 10;
+        } else {
+            kf.y = Math.round(tlYToValue(my, 'y', h) * 10) / 10;
+        }
+
+        drawTimeline();
+    }
+
+    function onTimelinePointerUp(e) {
+        if (tlDragging && state.recordedFade) {
+            // Save reference to the keyframe we were dragging before sort
+            const draggedKf = tlSelectedKf >= 0 ? state.recordedFade.keyframes[tlSelectedKf] : null;
+            tlDragging = false;
+            // Sort keyframes by time_ms
+            state.recordedFade.keyframes.sort((a, b) => a.time_ms - b.time_ms);
+            // Update selected index after sort
+            if (draggedKf) {
+                tlSelectedKf = state.recordedFade.keyframes.indexOf(draggedKf);
+            }
+            // Update duration_ms to match last keyframe
+            const kfs = state.recordedFade.keyframes;
+            if (kfs.length > 0) {
+                state.recordedFade.duration_ms = kfs[kfs.length - 1].time_ms;
+            }
+            drawTimeline();
+        }
+        tlDragging = false;
+        tlDragType = '';
+    }
+
+    function onTimelineContextMenu(e) {
+        e.preventDefault();
+        if (!state.recordedFade) return;
+        const rect = tlCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const hit = timelineHitTest(mx, my);
+        if (hit) {
+            if (!confirm('Delete this keyframe?')) return;
+            state.recordedFade.keyframes.splice(hit.index, 1);
+            tlSelectedKf = -1;
+            // Update duration
+            const kfs = state.recordedFade.keyframes;
+            state.recordedFade.duration_ms = kfs.length > 0 ? kfs[kfs.length - 1].time_ms : 0;
+            drawTimeline();
+        }
+    }
+
+    function onTimelineWheel(e) {
+        e.preventDefault();
+        const rect = tlCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const timeAtMouse = tlXToTime(mx);
+
+        // Adjust zoom
+        const delta = e.deltaY > 0 ? -10 : 10;
+        tlZoom = Math.max(50, Math.min(400, tlZoom + delta));
+        tlZoomSlider.value = tlZoom;
+
+        // Adjust scroll to keep mouse position stable
+        const newX = (timeAtMouse / 1000) * tlZoom;
+        tlScrollOffset = Math.max(0, newX - mx);
+
+        drawTimeline();
+    }
+
+    function tlScrubToPlayhead() {
+        // Update mixer control point to match position at playhead time (visual only, no audio)
+        if (!state.recordedFade || state.recordedFade.keyframes.length === 0) return;
+        const kfs = state.recordedFade.keyframes;
+        const t = tlPlayhead;
+
+        if (t <= kfs[0].time_ms) {
+            state.controlPoint.x = kfs[0].x;
+            state.controlPoint.y = kfs[0].y;
+        } else if (t >= kfs[kfs.length - 1].time_ms) {
+            state.controlPoint.x = kfs[kfs.length - 1].x;
+            state.controlPoint.y = kfs[kfs.length - 1].y;
+        } else {
+            for (let i = 0; i < kfs.length - 1; i++) {
+                if (kfs[i].time_ms <= t && kfs[i + 1].time_ms >= t) {
+                    const span = kfs[i + 1].time_ms - kfs[i].time_ms;
+                    const frac = span > 0 ? (t - kfs[i].time_ms) / span : 0;
+                    state.controlPoint.x = kfs[i].x + (kfs[i + 1].x - kfs[i].x) * frac;
+                    state.controlPoint.y = kfs[i].y + (kfs[i + 1].y - kfs[i].y) * frac;
+                    break;
+                }
+            }
+        }
+        markDirty();
+    }
+
+    // Wire up timeline canvas events
+    tlCanvas.addEventListener('pointerdown', onTimelinePointerDown);
+    tlCanvas.addEventListener('pointermove', onTimelinePointerMove);
+    tlCanvas.addEventListener('pointerup', onTimelinePointerUp);
+    tlCanvas.addEventListener('contextmenu', onTimelineContextMenu);
+    tlCanvas.addEventListener('wheel', onTimelineWheel, { passive: false });
+
+    // Zoom slider
+    tlZoomSlider.addEventListener('input', () => {
+        tlZoom = parseInt(tlZoomSlider.value);
+        drawTimeline();
+    });
+
+    // Close button
+    document.getElementById('timeline-close').addEventListener('click', () => {
+        tlPanel.style.display = 'none';
+    });
+
+    // Add Keyframe button
+    document.getElementById('btn-timeline-add').addEventListener('click', () => {
+        if (!state.recordedFade) return;
+        const newKf = {
+            time_ms: Math.round(tlPlayhead),
+            x: Math.round(state.controlPoint.x * 10) / 10,
+            y: Math.round(state.controlPoint.y * 10) / 10,
+        };
+        state.recordedFade.keyframes.push(newKf);
+        state.recordedFade.keyframes.sort((a, b) => a.time_ms - b.time_ms);
+        // Update duration
+        const kfs = state.recordedFade.keyframes;
+        state.recordedFade.duration_ms = kfs[kfs.length - 1].time_ms;
+        tlSelectedKf = kfs.indexOf(newKf);
+        drawTimeline();
+    });
+
+    // Delete Selected button
+    document.getElementById('btn-timeline-delete').addEventListener('click', () => {
+        if (!state.recordedFade || tlSelectedKf < 0) return;
+        state.recordedFade.keyframes.splice(tlSelectedKf, 1);
+        tlSelectedKf = -1;
+        const kfs = state.recordedFade.keyframes;
+        state.recordedFade.duration_ms = kfs.length > 0 ? kfs[kfs.length - 1].time_ms : 0;
+        drawTimeline();
+    });
+
     // ── Animation loop ─────────────────────────────────────────────────
 
     const LERP_FACTOR = 0.15;
@@ -1892,25 +2928,45 @@
             }
         }
 
-        // Preset position animation
-        if (state.presetAnimating && state.presetAnimTarget) {
-            const dx = state.presetAnimTarget.x - state.controlPoint.x;
-            const dy = state.presetAnimTarget.y - state.controlPoint.y;
-            if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
-                state.controlPoint.x = state.presetAnimTarget.x;
-                state.controlPoint.y = state.presetAnimTarget.y;
-                state.presetAnimating = false;
-                state.presetAnimTarget = null;
+        // Preview playback
+        if (state.previewing && state.recordedFade && !state.isDragging) {
+            const elapsed = performance.now() - state.previewStartTime;
+            const kfs = state.recordedFade.keyframes;
+            if (kfs.length === 0) {
+                state.previewing = false;
+                btnPreview.textContent = 'Play Preview';
+                btnRecord.disabled = false;
+                btnClearRec.disabled = false;
+            } else if (elapsed >= state.recordedFade.duration_ms) {
+                state.previewing = false;
+                btnPreview.textContent = 'Play Preview';
+                btnRecord.disabled = false;
+                btnClearRec.disabled = false;
+                markDirty();
             } else {
-                state.controlPoint.x += dx * 0.15;
-                state.controlPoint.y += dy * 0.15;
+                // Find surrounding keyframes
+                let kfA = kfs[0], kfB = kfs[0];
+                for (let i = 0; i < kfs.length - 1; i++) {
+                    if (kfs[i].time_ms <= elapsed && kfs[i + 1].time_ms >= elapsed) {
+                        kfA = kfs[i];
+                        kfB = kfs[i + 1];
+                        break;
+                    }
+                }
+                if (elapsed >= kfs[kfs.length - 1].time_ms) {
+                    kfA = kfB = kfs[kfs.length - 1];
+                }
+                const span = kfB.time_ms - kfA.time_ms;
+                const t = span > 0 ? (elapsed - kfA.time_ms) / span : 0;
+                state.controlPoint.x = kfA.x + (kfB.x - kfA.x) * t;
+                state.controlPoint.y = kfA.y + (kfB.y - kfA.y) * t;
+                updateVolumes();
+                animating = true;
             }
-            updateVolumes();
-            animating = true;
         }
 
         // Auto-bounce — customizable patterns
-        if (state.autoBounce !== 'off' && !state.isDragging) {
+        if (state.autoBounce !== 'off' && !state.isDragging && !state.previewing && !state.recording) {
             const n = state.devices.length;
             if (n >= 2) {
                 const now = performance.now() / 1000;
@@ -1975,24 +3031,8 @@
             }
         }
 
-        // Auto-DJ — energy-reactive crossfading between speakers
-        if (state.autoDJ && !state.isDragging) {
-            const n = state.devices.length;
-            if (n >= 2) {
-                // Primary speaker position
-                const primaryPos = devicePosition(state.djPrimarySpeaker, n);
-                // Energy maps control point between primary speaker and center
-                // energy 0 → sit on primary speaker, energy 1 → center (balanced)
-                const energy = state.djEnergy;
-                const targetX = primaryPos.x + (CENTER - primaryPos.x) * energy;
-                const targetY = primaryPos.y + (CENTER - primaryPos.y) * energy;
-                // Smooth lerp (0.05 = ~1 second to settle)
-                state.controlPoint.x += (targetX - state.controlPoint.x) * 0.05;
-                state.controlPoint.y += (targetY - state.controlPoint.y) * 0.05;
-                updateVolumes();
-                animating = true;
-            }
-        }
+        // Continuously animate when visualizer effects are active
+        if (state.vizMode >= 1 && state.vizIntensity > 0.01) animating = true;
 
         if (animating || _needsRedraw) {
             drawMixer();
@@ -2006,6 +3046,7 @@
     // Initial fetch on page load (WS connect handler will push updates too).
     fetchDevices().then(() => updateVolumes());
     fetchRouterStatus();
+    fetchFadeSlots();
 
     // No polling intervals needed — WebSocket push handles updates.
     // HTTP fallback polling is started automatically if WS disconnects.
