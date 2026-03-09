@@ -157,3 +157,8 @@ class FadeStore:
                 self._save()
                 return True
             return False
+
+    def clear(self):
+        """Remove all fades (thread-safe)."""
+        with self._lock:
+            self._fades.clear()

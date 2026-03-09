@@ -63,9 +63,9 @@ def socketio_client(app):
 @pytest.fixture(autouse=True)
 def _clear_fade_store():
     """Clear fade store before each test to avoid cross-test pollution."""
-    server_module._fade_store._fades.clear()
+    server_module._fade_store.clear()
     yield
-    server_module._fade_store._fades.clear()
+    server_module._fade_store.clear()
 
 
 # ---------------------------------------------------------------------------

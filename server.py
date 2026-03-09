@@ -1131,9 +1131,9 @@ _fade_playback_state = {
     'fade_id': None,
     'start_time': None,
     'pause_time': None,
-    'elapsed_at_pause': 0,
 }
 _fade_playback_stop = threading.Event()
+_fade_playback_thread_ref = None  # reference to current playback thread
 
 # ---------------------------------------------------------------------------
 # Spotify integration
@@ -1902,13 +1902,21 @@ def api_set_zone_positions():
 
 @app.route('/api/fades', methods=['GET'])
 def api_list_fades():
+    """List all saved fades with their slot numbers."""
     return jsonify(_fade_store.list_fades())
 
 @app.route('/api/fades', methods=['POST'])
 def api_save_fade():
+    """Save a new fade to the next available slot."""
     data = request.get_json(silent=True) or {}
-    if 'name' not in data or 'keyframes' not in data:
-        return jsonify({'error': 'name and keyframes required'}), 400
+    name = data.get('name')
+    if not isinstance(name, str) or not name.strip():
+        return jsonify({'error': 'name must be a non-empty string'}), 400
+    if not isinstance(data.get('keyframes'), list):
+        return jsonify({'error': 'keyframes must be a list'}), 400
+    duration_ms = data.get('duration_ms')
+    if not isinstance(duration_ms, (int, float)) or duration_ms <= 0:
+        return jsonify({'error': 'duration_ms must be a positive number'}), 400
     slot = _fade_store.save_fade(data)
     if slot is None:
         return jsonify({'error': 'All 16 slots full'}), 400
@@ -1916,6 +1924,7 @@ def api_save_fade():
 
 @app.route('/api/fades/<int:fade_id>', methods=['GET'])
 def api_get_fade(fade_id):
+    """Return full fade data for a given slot."""
     fade = _fade_store.get_fade(fade_id)
     if fade is None:
         return jsonify({'error': 'Not found'}), 404
@@ -1923,13 +1932,19 @@ def api_get_fade(fade_id):
 
 @app.route('/api/fades/<int:fade_id>', methods=['PUT'])
 def api_update_fade(fade_id):
+    """Update fields of an existing fade slot."""
     data = request.get_json(silent=True) or {}
-    if not _fade_store.update_fade(fade_id, data):
+    allowed = {'name', 'keyframes', 'duration_ms'}
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    if not filtered:
+        return jsonify({'error': 'No valid update fields provided'}), 400
+    if not _fade_store.update_fade(fade_id, filtered):
         return jsonify({'error': 'Not found'}), 404
     return jsonify({'success': True})
 
 @app.route('/api/fades/<int:fade_id>', methods=['DELETE'])
 def api_delete_fade(fade_id):
+    """Delete a fade from the given slot."""
     if not _fade_store.delete_fade(fade_id):
         return jsonify({'error': 'Not found'}), 404
     return jsonify({'success': True})
@@ -1961,24 +1976,26 @@ def _get_device_positions():
 def _fade_playback_thread(fade_id, keyframes, duration_ms):
     """Background thread: plays a fade by interpolating keyframes."""
     with _fade_playback_lock:
+        _fade_playback_stop.clear()
         _fade_playback_state['active'] = True
         _fade_playback_state['paused'] = False
         _fade_playback_state['fade_id'] = fade_id
         _fade_playback_state['start_time'] = time.time()
         _fade_playback_state['pause_time'] = None
-        _fade_playback_state['elapsed_at_pause'] = 0
-    _fade_playback_stop.clear()
 
     device_positions = _get_device_positions()
     curve_type = 'inverse-square'
 
-    while not _fade_playback_stop.is_set():
+    while not _fade_playback_stop.is_set() and not _shutdown_event.is_set():
         with _fade_playback_lock:
             if _fade_playback_state['paused']:
-                time.sleep(0.033)
-                continue
-            elapsed = (time.time() - _fade_playback_state['start_time']) * 1000
-            elapsed -= _fade_playback_state.get('elapsed_at_pause', 0)
+                is_paused = True
+            else:
+                is_paused = False
+                elapsed = (time.time() - _fade_playback_state['start_time']) * 1000
+        if is_paused:
+            _fade_playback_stop.wait(timeout=0.033)
+            continue
 
         if elapsed >= duration_ms:
             break
@@ -2020,17 +2037,22 @@ def ws_trigger_fade(data):
     if not fade:
         emit('fade_ended', {'fade_id': fade_id, 'error': 'not_found'})
         return
+    global _fade_playback_thread_ref
     _fade_playback_stop.set()
+    if _fade_playback_thread_ref is not None:
+        _fade_playback_thread_ref.join(timeout=0.2)
     keyframes = fade.get('keyframes', [])
     duration_ms = fade.get('duration_ms', 0)
     if not keyframes or duration_ms <= 0:
         emit('fade_ended', {'fade_id': fade_id, 'error': 'empty'})
         return
-    threading.Thread(
+    t = threading.Thread(
         target=_fade_playback_thread,
         args=(int(fade_id), keyframes, duration_ms),
         daemon=True,
-    ).start()
+    )
+    _fade_playback_thread_ref = t
+    t.start()
 
 
 @socketio.on('stop_fade')
@@ -2055,9 +2077,7 @@ def ws_pause_fade(data=None):
 
 @socketio.on('override_fade')
 def ws_override_fade(data=None):
-    _fade_playback_stop.set()
-    with _fade_playback_lock:
-        _fade_playback_state['active'] = False
+    ws_stop_fade()
 
 
 def _spotify_poller():
