@@ -1,5 +1,6 @@
 # fade_engine.py
 """Fade engine: weight computation, keyframe interpolation, and fade storage."""
+import copy
 import json
 import math
 import os
@@ -110,8 +111,8 @@ class FadeStore:
         try:
             with open(self._path, 'w') as f:
                 json.dump(data, f, indent=2)
-        except IOError:
-            pass
+        except IOError as e:
+            print(f"[FadeStore] Failed to save fades: {e}")
 
     def list_fades(self):
         """Return dict of slot -> {name, duration_ms}."""
@@ -124,15 +125,17 @@ class FadeStore:
     def get_fade(self, slot):
         """Get full fade data for a slot, or None."""
         with self._lock:
-            return self._fades.get(slot)
+            fade = self._fades.get(slot)
+            return copy.deepcopy(fade) if fade else None
 
     def save_fade(self, fade_data):
         """Save a fade to the next available slot. Returns slot number or None if full."""
         with self._lock:
             for slot in range(1, MAX_SLOTS + 1):
                 if slot not in self._fades:
-                    fade_data['created_at'] = datetime.now(timezone.utc).isoformat()
-                    self._fades[slot] = fade_data
+                    stored = copy.deepcopy(fade_data)
+                    stored['created_at'] = datetime.now(timezone.utc).isoformat()
+                    self._fades[slot] = stored
                     self._save()
                     return slot
             return None

@@ -1,7 +1,6 @@
 # test_fade_engine.py
 """Tests for fade engine: weight computation and fade storage."""
 import os
-import json
 import tempfile
 import pytest
 
