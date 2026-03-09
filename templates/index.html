@@ -2160,6 +2160,7 @@
     const btnStopRec = document.getElementById('btn-stop-rec');
     const btnPreview = document.getElementById('btn-preview');
     const btnClearRec = document.getElementById('btn-clear-rec');
+    const btnSaveFade = document.getElementById('btn-save-fade');
     const recTimer = document.getElementById('rec-timer');
     const recIndicator = document.getElementById('rec-indicator');
 
@@ -2239,6 +2240,7 @@
         state.recordingKeyframes = [];
         btnPreview.disabled = true;
         btnClearRec.disabled = true;
+        btnSaveFade.disabled = true;
         recTimer.textContent = '0:00';
     });
 
@@ -2254,12 +2256,12 @@
 
     // ── Fade Slot Sidebar ───────────────────────────────────────────────
     const fadeSlotList = document.getElementById('fade-slot-list');
-    const btnSaveFade = document.getElementById('btn-save-fade');
     let fadeSlots = {};  // slot -> {name, duration_ms}
 
     async function fetchFadeSlots() {
         try {
             const resp = await fetch('/api/fades');
+            if (!resp.ok) throw new Error('Failed to fetch');
             fadeSlots = await resp.json();
             // Convert string keys to int
             const converted = {};
@@ -2300,8 +2302,14 @@
                 del.title = 'Delete';
                 del.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    await fetch('/api/fades/' + i, { method: 'DELETE' });
-                    fetchFadeSlots();
+                    if (!confirm('Delete this fade?')) return;
+                    try {
+                        const resp = await fetch('/api/fades/' + i, { method: 'DELETE' });
+                        if (!resp.ok) throw new Error('Delete failed');
+                        fetchFadeSlots();
+                    } catch (err) {
+                        console.error('Failed to delete fade:', err);
+                    }
                 });
 
                 item.append(num, name, dur, del);
@@ -2310,6 +2318,7 @@
                 item.addEventListener('click', async () => {
                     try {
                         const resp = await fetch('/api/fades/' + i);
+                        if (!resp.ok) throw new Error('Not found');
                         const fade = await resp.json();
                         state.recordedFade = {
                             keyframes: fade.keyframes,
@@ -2347,6 +2356,7 @@
                     keyframes: state.recordedFade.keyframes,
                 }),
             });
+            if (!resp.ok) throw new Error('Save failed');
             const data = await resp.json();
             if (data.slot) {
                 showToast('Saved to slot ' + data.slot);
